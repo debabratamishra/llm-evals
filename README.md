@@ -6,6 +6,8 @@ A comprehensive dashboard for visualizing and analyzing Large Language Model eva
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.4+-red.svg)
 ![License](https://img.shields.io/badge/License-Apache2.0-green.svg)
 
+![Home Page of LLM Evals](LLM-evals.png)
+
 ## 🚀 Features
 
 ### 📊 Dashboard Sections
@@ -44,7 +46,7 @@ A comprehensive dashboard for visualizing and analyzing Large Language Model eva
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/debabratamishra/llm-evals
    cd llm-evals
    ```
 
