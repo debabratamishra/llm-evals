@@ -79,6 +79,9 @@ class EvaluationDataLoader:
         # Process cost metrics
         self.data['cost_metrics'] = self._extract_cost_metrics()
         
+        # Process throughput metrics
+        self.data['throughput_metrics'] = self._extract_throughput_metrics()
+        
         # Process model comparison data
         self.data['model_comparison'] = self._create_model_comparison()
     
@@ -132,6 +135,46 @@ class EvaluationDataLoader:
         
         return pd.DataFrame(cost_data)
     
+    def _extract_throughput_metrics(self) -> pd.DataFrame:
+        """Extract throughput metrics into a structured DataFrame."""
+        throughput_data = []
+        
+        for summary_key, summary in self.summary_data.items():
+            for model_name, model_data in summary.items():
+                cost_throughput = model_data.get('cost_throughput', {})
+                
+                if cost_throughput:
+                    elapsed_seconds = cost_throughput.get('elapsed_seconds', 0)
+                    total_tokens = cost_throughput.get('total_tokens', 0)
+                    input_tokens = cost_throughput.get('input_tokens', 0)
+                    output_tokens = cost_throughput.get('output_tokens', 0)
+                    
+                    # Calculate throughput metrics
+                    tokens_per_second = total_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
+                    
+                    # Estimate TTFT (assuming first token takes proportionally longer)
+                    # This is an approximation - actual TTFT would need to be measured separately
+                    estimated_ttft = elapsed_seconds * 0.1 if elapsed_seconds > 0 else 0  # 10% of total time
+                    
+                    # Calculate output tokens per second (generation speed)
+                    output_tokens_per_second = output_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
+                    
+                    row = {
+                        'model': model_name,
+                        'elapsed_seconds': elapsed_seconds,
+                        'total_tokens': total_tokens,
+                        'input_tokens': input_tokens,
+                        'output_tokens': output_tokens,
+                        'tokens_per_second': tokens_per_second,
+                        'output_tokens_per_second': output_tokens_per_second,
+                        'estimated_ttft_seconds': estimated_ttft,
+                        'mode': cost_throughput.get('mode', 'unknown'),
+                        'source': summary_key
+                    }
+                    throughput_data.append(row)
+        
+        return pd.DataFrame(throughput_data)
+    
     def _create_model_comparison(self) -> pd.DataFrame:
         """Create a comprehensive model comparison DataFrame."""
         comparison_data = []
@@ -156,12 +199,22 @@ class EvaluationDataLoader:
                 cost_throughput = model_data.get('cost_throughput', {})
                 cost_info = cost_throughput.get('cost', {})
                 
+                # Calculate throughput metrics
+                elapsed_seconds = cost_throughput.get('elapsed_seconds', 0)
+                total_tokens = cost_throughput.get('total_tokens', 0)
+                output_tokens = cost_throughput.get('output_tokens', 0)
+                tokens_per_second = total_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
+                output_tokens_per_second = output_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
+                
                 row = {
                     'model': model_name,
                     'avg_accuracy': avg_accuracy,
                     'total_samples': total_samples,
                     'cost_per_1m_tokens': cost_info.get('cost_per_1m_tokens_usd', 0),
                     'run_cost': cost_info.get('run_cost_usd', 0),
+                    'tokens_per_second': tokens_per_second,
+                    'output_tokens_per_second': output_tokens_per_second,
+                    'elapsed_seconds': elapsed_seconds,
                     'mode': cost_throughput.get('mode', 'unknown'),
                     'source': summary_key
                 }
@@ -211,3 +264,21 @@ def calculate_efficiency_score(accuracy: float, cost_per_1m_tokens: float) -> fl
     
     # Simple efficiency: accuracy per dollar spent
     return accuracy / cost_per_1m_tokens
+
+def calculate_throughput_efficiency_score(accuracy: float, cost_per_1m_tokens: float, tokens_per_second: float) -> float:
+    """
+    Calculate a composite efficiency score based on accuracy, cost, and throughput.
+    
+    Args:
+        accuracy: Model accuracy (0-1)
+        cost_per_1m_tokens: Cost per million tokens in USD
+        tokens_per_second: Throughput in tokens per second
+    
+    Returns:
+        Efficiency score (higher is better)
+    """
+    if cost_per_1m_tokens == 0 or tokens_per_second == 0:
+        return accuracy
+    
+    # Composite efficiency: (accuracy * throughput) / cost
+    return (accuracy * tokens_per_second) / cost_per_1m_tokens
