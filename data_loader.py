@@ -145,16 +145,26 @@ class EvaluationDataLoader:
                 
                 if cost_throughput:
                     elapsed_seconds = cost_throughput.get('elapsed_seconds', 0)
-                    total_tokens = cost_throughput.get('total_tokens', 0)
-                    input_tokens = cost_throughput.get('input_tokens', 0)
-                    output_tokens = cost_throughput.get('output_tokens', 0)
                     
-                    # Calculate throughput metrics
-                    tokens_per_second = total_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
+                    # Extract token information from the tokens section
+                    tokens_section = cost_throughput.get('tokens', {})
+                    total_tokens = tokens_section.get('compute_total', 0)
+                    input_tokens = tokens_section.get('input_total', 0)
+                    output_tokens = tokens_section.get('output_total', 0)
+                    
+                    # Extract throughput information from the throughput section
+                    throughput_section = cost_throughput.get('throughput', {})
+                    tokens_per_second_overall = throughput_section.get('tokens_per_second_overall', 0)
+                    tokens_per_second_forward = throughput_section.get('tokens_per_second_forward_overall', 0)
+                    
+                    # Use the provided throughput metrics or calculate if not available
+                    tokens_per_second = tokens_per_second_overall or tokens_per_second_forward
+                    if tokens_per_second == 0 and elapsed_seconds > 0:
+                        tokens_per_second = total_tokens / elapsed_seconds
                     
                     # Estimate TTFT (assuming first token takes proportionally longer)
                     # This is an approximation - actual TTFT would need to be measured separately
-                    estimated_ttft = elapsed_seconds * 0.1 if elapsed_seconds > 0 else 0  # 10% of total time
+                    estimated_ttft = elapsed_seconds * 0.05 if elapsed_seconds > 0 else 0  # 5% of total time as estimate
                     
                     # Calculate output tokens per second (generation speed)
                     output_tokens_per_second = output_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
@@ -166,6 +176,8 @@ class EvaluationDataLoader:
                         'input_tokens': input_tokens,
                         'output_tokens': output_tokens,
                         'tokens_per_second': tokens_per_second,
+                        'tokens_per_second_overall': tokens_per_second_overall,
+                        'tokens_per_second_forward': tokens_per_second_forward,
                         'output_tokens_per_second': output_tokens_per_second,
                         'estimated_ttft_seconds': estimated_ttft,
                         'mode': cost_throughput.get('mode', 'unknown'),
@@ -199,11 +211,21 @@ class EvaluationDataLoader:
                 cost_throughput = model_data.get('cost_throughput', {})
                 cost_info = cost_throughput.get('cost', {})
                 
-                # Calculate throughput metrics
+                # Extract throughput data from the proper structure
+                tokens_section = cost_throughput.get('tokens', {})
+                throughput_section = cost_throughput.get('throughput', {})
+                
                 elapsed_seconds = cost_throughput.get('elapsed_seconds', 0)
-                total_tokens = cost_throughput.get('total_tokens', 0)
-                output_tokens = cost_throughput.get('output_tokens', 0)
-                tokens_per_second = total_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
+                total_tokens = tokens_section.get('compute_total', 0)
+                output_tokens = tokens_section.get('output_total', 0)
+                
+                # Use the provided throughput metrics
+                tokens_per_second = throughput_section.get('tokens_per_second_overall', 0)
+                if tokens_per_second == 0:
+                    tokens_per_second = throughput_section.get('tokens_per_second_forward_overall', 0)
+                if tokens_per_second == 0 and elapsed_seconds > 0:
+                    tokens_per_second = total_tokens / elapsed_seconds
+                
                 output_tokens_per_second = output_tokens / elapsed_seconds if elapsed_seconds > 0 else 0
                 
                 row = {
@@ -215,6 +237,7 @@ class EvaluationDataLoader:
                     'tokens_per_second': tokens_per_second,
                     'output_tokens_per_second': output_tokens_per_second,
                     'elapsed_seconds': elapsed_seconds,
+                    'total_tokens': total_tokens,
                     'mode': cost_throughput.get('mode', 'unknown'),
                     'source': summary_key
                 }

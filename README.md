@@ -1,6 +1,6 @@
-# 🧠 LLM Evaluation Dashboard
+# LLM Evaluation Dashboard
 
-A comprehensive dashboard for visualizing and analyzing Large Language Model evaluation results, including performance metrics, cost analysis, and model comparisons.
+A comprehensive dashboard for visualizing and analyzing evaluation results of Large Language Models, including performance metrics, cost analysis, and model comparisons.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.4+-red.svg)

@@ -53,7 +53,7 @@ def main():
     """Main dashboard application."""
     
     # Title and description
-    st.title("🧠 LLM Evaluation Dashboard")
+    st.title("LLM Evaluation Dashboard")
     st.markdown("""
     **Comprehensive analysis of Large Language Model evaluation results**
     
@@ -193,7 +193,7 @@ def main():
             st.subheader("Performance Heatmap")
             
             heatmap_fig = visualizer.create_benchmark_heatmap(performance_df)
-            st.plotly_chart(heatmap_fig, width="stretch")
+            st.plotly_chart(heatmap_fig, width='stretch')
             
             # Performance data table
             st.subheader("Detailed Performance Data")
@@ -281,21 +281,17 @@ def main():
                 filtered_throughput_df = throughput_df[throughput_df['model'].isin(selected_models_throughput)]
                 
                 # Throughput metrics overview
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     avg_tps = filtered_throughput_df['tokens_per_second'].mean()
                     st.metric("Avg Tokens/Sec", f"{avg_tps:.1f}")
                 
                 with col2:
-                    avg_output_tps = filtered_throughput_df['output_tokens_per_second'].mean()
-                    st.metric("Avg Output Tokens/Sec", f"{avg_output_tps:.1f}")
-                
-                with col3:
                     avg_ttft = filtered_throughput_df['estimated_ttft_seconds'].mean()
                     st.metric("Avg Est. TTFT (s)", f"{avg_ttft:.2f}")
                 
-                with col4:
+                with col3:
                     avg_total_time = filtered_throughput_df['elapsed_seconds'].mean()
                     st.metric("Avg Total Time (s)", f"{avg_total_time:.1f}")
                 
@@ -326,7 +322,7 @@ def main():
                 formatted_throughput_df['model'] = formatted_throughput_df['model'].apply(format_model_name)
                 
                 # Select relevant columns for display
-                columns_to_show = ['model', 'tokens_per_second', 'output_tokens_per_second', 
+                columns_to_show = ['model', 'tokens_per_second', 
                                  'estimated_ttft_seconds', 'elapsed_seconds', 'total_tokens', 'mode', 'source']
                 available_columns = [col for col in columns_to_show if col in formatted_throughput_df.columns]
                 formatted_throughput_df_filtered = formatted_throughput_df[available_columns]
@@ -347,7 +343,7 @@ def main():
             st.subheader("Efficiency Analysis: Accuracy vs Cost")
             
             efficiency_fig = visualizer.create_efficiency_scatter(comparison_df)
-            st.plotly_chart(efficiency_fig, width="stretch")
+            st.plotly_chart(efficiency_fig, width='stretch')
             
             # Model selector for radar chart
             st.subheader("Model Profile Analysis")
@@ -361,7 +357,7 @@ def main():
             )
             
             radar_fig = visualizer.create_model_radar_chart(comparison_df, selected_model_radar)
-            st.plotly_chart(radar_fig, width="stretch")
+            st.plotly_chart(radar_fig, width='stretch')
             
             # Model ranking
             st.subheader("Model Rankings")
@@ -383,7 +379,7 @@ def main():
             # Display ranking table
             ranking_display = ranking_df[['rank', 'model', 'avg_accuracy', 'cost_per_1m_tokens', 
                                         'efficiency_score']].round(4)
-            st.dataframe(ranking_display, width="stretch")
+            st.dataframe(ranking_display, width='stretch')
             
         else:
             st.warning("⚠️ No model comparison data available.")
@@ -444,7 +440,7 @@ def main():
                 display_columns = ['model', 'avg_accuracy', 'cost_per_1m_tokens', 'tokens_per_second', 'custom_efficiency']
                 available_display_columns = [col for col in display_columns if col in custom_df.columns]
                 custom_display = custom_df[available_display_columns].round(4)
-                st.dataframe(custom_display, width="stretch")
+                st.dataframe(custom_display, width='stretch')
                 
                 # Visualize custom efficiency
                 fig_custom = px.bar(
@@ -455,7 +451,7 @@ def main():
                     labels={'model': 'Model', 'custom_efficiency': 'Custom Efficiency Score'}
                 )
                 fig_custom.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig_custom, width="stretch")
+                st.plotly_chart(fig_custom, width='stretch')
             
             # Data export section
             st.subheader("📥 Data Export")
