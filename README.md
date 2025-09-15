@@ -1,6 +1,6 @@
-# 🧠 LLM Evaluation Dashboard
+# LLM Evaluation Dashboard
 
-A comprehensive dashboard for visualizing and analyzing Large Language Model evaluation results, including performance metrics, cost analysis, and model comparisons.
+A comprehensive dashboard for visualizing and analyzing evaluation results of Large Language Models, including performance metrics, cost analysis, and model comparisons.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.4+-red.svg)
@@ -24,14 +24,21 @@ A comprehensive dashboard for visualizing and analyzing Large Language Model eva
    - Cost efficiency metrics
    - Detailed cost breakdown by model
 
-3. **🔍 Model Comparison**
+3. **⚡ Throughput Analysis**
+   - Tokens per Second (TPS) measurements
+   - Time to First Token (TTFT) analysis  
+   - Output token generation speed metrics
+   - Throughput efficiency scatter plots (accuracy vs speed)
+   - Detailed throughput data tables
+
+4. **🔍 Model Comparison**
    - Efficiency scatter plots (accuracy vs cost)
    - Model profile radar charts
    - Automated model rankings with efficiency scores
    - Custom efficiency metrics with adjustable weights
 
-4. **📊 Advanced Analytics**
-   - Custom efficiency scoring with user-defined weights
+5. **📊 Advanced Analytics**
+   - Multi-dimensional efficiency scoring (accuracy + cost + throughput)
    - Data export functionality (CSV download)
    - Interactive visualizations with tooltips
    - Comprehensive metrics tables
@@ -104,7 +111,7 @@ The dashboard automatically loads evaluation data from the `data/` directory. Th
 }
 ```
 
-**Cost Metrics:**
+**Cost & Throughput Metrics:**
 ```json
 {
   "model_name": {
@@ -115,7 +122,13 @@ The dashboard automatically loads evaluation data from the `data/` directory. Th
         "cost_per_1m_tokens_usd": 0.1
       },
       "mode": "api",
-      "elapsed_seconds": 45.2
+      "elapsed_seconds": 45.2,
+      "total_tokens": 25000,
+      "input_tokens": 15000,
+      "output_tokens": 10000
+    }
+  }
+}
     }
   }
 }
@@ -139,13 +152,19 @@ The dashboard automatically loads evaluation data from the `data/` directory. Th
    - Compare total run costs
    - Identify cost-effective models
 
-3. **🔍 Model Comparison**
+3. **⚡ Throughput Analysis**
+   - Tokens per Second (TPS) performance metrics
+   - Time to First Token (TTFT) measurements
+   - Throughput efficiency analysis (accuracy vs speed)
+   - Detailed throughput data tables
+
+4. **🔍 Model Comparison**
    - Efficiency analysis (accuracy vs cost)
    - Radar charts for model profiles
    - Customizable ranking systems
 
-4. **📊 Advanced Analytics**
-   - Custom efficiency calculations
+5. **📊 Advanced Analytics**
+   - Multi-dimensional efficiency calculations (accuracy + cost + throughput)
    - Data export functionality
    - Interactive metric visualization
 
@@ -156,6 +175,20 @@ The dashboard automatically loads evaluation data from the `data/` directory. Th
 - **Export Options**: Download charts and data as CSV/PNG
 - **Responsive Design**: Optimized for different screen sizes
 - **Real-time Updates**: Data refreshes automatically when changed
+
+## ⚡ Throughput Metrics Explained
+
+### Key Metrics
+- **Tokens per Second (TPS)**: Total throughput including both input and output processing
+- **Output Tokens per Second**: Generation speed for output tokens only
+- **Time to First Token (TTFT)**: Latency measurement for initial response (estimated)
+- **Throughput Efficiency**: Composite metric combining accuracy and speed performance
+
+### Use Cases
+- **Latency Optimization**: Use TTFT metrics for real-time applications
+- **Throughput Planning**: Use TPS metrics for batch processing scenarios  
+- **Balanced Selection**: Use efficiency metrics for optimal accuracy-speed trade-offs
+- **Cost-Performance Analysis**: Combined with cost metrics for comprehensive evaluation
 
 ## 🔧 Configuration
 
