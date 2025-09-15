@@ -6,7 +6,7 @@ A comprehensive dashboard for visualizing and analyzing evaluation results of La
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.4+-red.svg)
 ![License](https://img.shields.io/badge/License-Apache2.0-green.svg)
 
-![Home Page of LLM Evals](LLM-evals.png)
+![Home Page of LLM Evals](llmevals.gif)
 
 ## 🚀 Features
 
