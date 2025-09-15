@@ -449,6 +449,145 @@ class EvaluationVisualizer:
             plot_bgcolor=self.theme['background_color']
         )
         return fig
+    
+    def create_throughput_analysis(self, throughput_df: pd.DataFrame) -> go.Figure:
+        """
+        Create a visualization for throughput metrics (tokens per second).
+        
+        Args:
+            throughput_df: DataFrame with throughput metrics
+        
+        Returns:
+            Plotly figure
+        """
+        if throughput_df.empty:
+            return self._create_empty_figure("No throughput data available")
+        
+        fig = go.Figure()
+        
+        fig.add_trace(
+            go.Bar(
+                x=[self._format_model_name(name) for name in throughput_df['model']],
+                y=throughput_df['tokens_per_second'],
+                name='Total Tokens/Second',
+                marker_color=self.color_palette[0],
+                yaxis='y'
+            )
+        )
+        
+        fig.add_trace(
+            go.Bar(
+                x=[self._format_model_name(name) for name in throughput_df['model']],
+                y=throughput_df['output_tokens_per_second'],
+                name='Output Tokens/Second',
+                marker_color=self.color_palette[1],
+                yaxis='y'
+            )
+        )
+        
+        fig.update_layout(
+            title='Throughput Analysis: Tokens per Second',
+            xaxis_title='Model',
+            yaxis_title='Tokens per Second',
+            height=500,
+            barmode='group',
+            plot_bgcolor=self.theme['background_color']
+        )
+        
+        fig.update_xaxes(tickangle=-45)
+        
+        return fig
+    
+    def create_ttft_analysis(self, throughput_df: pd.DataFrame) -> go.Figure:
+        """
+        Create a visualization for Time to First Token (TTFT) metrics.
+        
+        Args:
+            throughput_df: DataFrame with throughput metrics
+        
+        Returns:
+            Plotly figure
+        """
+        if throughput_df.empty:
+            return self._create_empty_figure("No TTFT data available")
+        
+        fig = go.Figure()
+        
+        fig.add_trace(
+            go.Bar(
+                x=[self._format_model_name(name) for name in throughput_df['model']],
+                y=throughput_df['estimated_ttft_seconds'],
+                name='Estimated TTFT (seconds)',
+                marker_color=self.color_palette[2]
+            )
+        )
+        
+        fig.update_layout(
+            title='Time to First Token Analysis',
+            xaxis_title='Model',
+            yaxis_title='Time to First Token (seconds)',
+            height=500,
+            plot_bgcolor=self.theme['background_color']
+        )
+        
+        fig.update_xaxes(tickangle=-45)
+        
+        return fig
+    
+    def create_throughput_efficiency_scatter(self, comparison_df: pd.DataFrame) -> go.Figure:
+        """
+        Create a scatter plot showing throughput efficiency (accuracy vs tokens per second).
+        
+        Args:
+            comparison_df: DataFrame with model comparison data
+        
+        Returns:
+            Plotly figure
+        """
+        if comparison_df.empty:
+            return self._create_empty_figure("No comparison data available")
+        
+        # Filter out models with zero throughput
+        filtered_df = comparison_df[comparison_df['tokens_per_second'] > 0].copy()
+        
+        if filtered_df.empty:
+            return self._create_empty_figure("No valid throughput data for efficiency analysis")
+        
+        fig = go.Figure()
+        
+        for i, row in filtered_df.iterrows():
+            fig.add_trace(go.Scatter(
+                x=[row['tokens_per_second']],
+                y=[row['avg_accuracy']],
+                mode='markers+text',
+                marker=dict(
+                    size=max(20, row['cost_per_1m_tokens'] * 10),  # Size based on cost
+                    color=self.color_palette[i % len(self.color_palette)],
+                    opacity=0.7
+                ),
+                text=[self._format_model_name(row['model'])],
+                textposition="top center",
+                textfont=dict(color='black', size=12),
+                name=self._format_model_name(row['model']),
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>{self._format_model_name(row['model'])}</b><br>"
+                    f"Accuracy: {row['avg_accuracy']:.3f}<br>"
+                    f"Tokens/sec: {row['tokens_per_second']:.1f}<br>"
+                    f"Cost/1M tokens: ${row['cost_per_1m_tokens']:.3f}<br>"
+                    "<extra></extra>"
+                )
+            ))
+        
+        fig.update_layout(
+            title='Throughput Efficiency: Accuracy vs Speed',
+            xaxis_title='Tokens per Second',
+            yaxis_title='Average Accuracy',
+            height=500,
+            plot_bgcolor=self.theme['background_color']
+        )
+        
+        return fig
 
 class MetricCalculator:
     """Utility class for calculating derived metrics."""
@@ -459,6 +598,20 @@ class MetricCalculator:
         if cost_per_1m_tokens == 0:
             return 0
         return accuracy / cost_per_1m_tokens
+    
+    @staticmethod
+    def calculate_throughput_efficiency(accuracy: float, tokens_per_second: float) -> float:
+        """Calculate throughput efficiency score."""
+        if tokens_per_second == 0:
+            return 0
+        return accuracy * tokens_per_second
+    
+    @staticmethod
+    def calculate_comprehensive_efficiency(accuracy: float, cost_per_1m_tokens: float, tokens_per_second: float) -> float:
+        """Calculate comprehensive efficiency combining accuracy, cost, and throughput."""
+        if cost_per_1m_tokens == 0 or tokens_per_second == 0:
+            return 0
+        return (accuracy * tokens_per_second) / cost_per_1m_tokens
     
     @staticmethod
     def normalize_metric(values: pd.Series) -> pd.Series:

@@ -16,7 +16,7 @@ from typing import Dict, Any, List
 dashboard_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(dashboard_dir)
 
-from data_loader import EvaluationDataLoader, format_model_name, calculate_efficiency_score
+from data_loader import EvaluationDataLoader, format_model_name, calculate_efficiency_score, calculate_throughput_efficiency_score
 from visualizations import EvaluationVisualizer, MetricCalculator
 
 # Page configuration
@@ -124,8 +124,8 @@ def main():
     st.markdown("---")
     
     # Navigation tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🎯 Performance & TopN Analysis", "💰 Cost Analysis", "🔍 Model Comparison", "📊 Advanced Analytics"
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🎯 Performance & TopN Analysis", "💰 Cost Analysis", "⚡ Throughput Analysis", "🔍 Model Comparison", "📊 Advanced Analytics"
     ])
     
     # Initialize visualizer
@@ -254,8 +254,90 @@ def main():
         else:
             st.warning("⚠️ No cost data available.")
     
-    # Model Comparison Tab
+    # Throughput Analysis Tab
     with tab3:
+        st.header("⚡ Throughput Analysis")
+        
+        throughput_df = data.get('throughput_metrics', pd.DataFrame())
+        
+        if not throughput_df.empty:
+            # Model selection checkboxes for throughput
+            st.subheader("🔧 Model Selection")
+            available_models = throughput_df['model'].unique()
+            
+            # Create checkboxes for model selection
+            selected_models_throughput = []
+            cols = st.columns(min(len(available_models), 3))  # Max 3 columns
+            
+            for i, model in enumerate(available_models):
+                with cols[i % len(cols)]:
+                    if st.checkbox(format_model_name(model), value=True, key=f"throughput_model_{i}"):
+                        selected_models_throughput.append(model)
+            
+            if not selected_models_throughput:
+                st.warning("⚠️ Please select at least one model to display throughput analysis.")
+            else:
+                # Filter data based on selected models
+                filtered_throughput_df = throughput_df[throughput_df['model'].isin(selected_models_throughput)]
+                
+                # Throughput metrics overview
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    avg_tps = filtered_throughput_df['tokens_per_second'].mean()
+                    st.metric("Avg Tokens/Sec", f"{avg_tps:.1f}")
+                
+                with col2:
+                    avg_output_tps = filtered_throughput_df['output_tokens_per_second'].mean()
+                    st.metric("Avg Output Tokens/Sec", f"{avg_output_tps:.1f}")
+                
+                with col3:
+                    avg_ttft = filtered_throughput_df['estimated_ttft_seconds'].mean()
+                    st.metric("Avg Est. TTFT (s)", f"{avg_ttft:.2f}")
+                
+                with col4:
+                    avg_total_time = filtered_throughput_df['elapsed_seconds'].mean()
+                    st.metric("Avg Total Time (s)", f"{avg_total_time:.1f}")
+                
+                st.markdown("---")
+                
+                # Main throughput analysis chart
+                st.subheader("Tokens per Second Analysis")
+                throughput_fig = visualizer.create_throughput_analysis(filtered_throughput_df)
+                st.plotly_chart(throughput_fig, width='stretch')
+                
+                # TTFT analysis
+                st.subheader("Time to First Token Analysis")
+                ttft_fig = visualizer.create_ttft_analysis(filtered_throughput_df)
+                st.plotly_chart(ttft_fig, width='stretch')
+                
+                # Throughput efficiency analysis
+                comparison_df = data.get('model_comparison', pd.DataFrame())
+                if not comparison_df.empty:
+                    filtered_comparison_df = comparison_df[comparison_df['model'].isin(selected_models_throughput)]
+                    
+                    st.subheader("Throughput Efficiency: Accuracy vs Speed")
+                    throughput_efficiency_fig = visualizer.create_throughput_efficiency_scatter(filtered_comparison_df)
+                    st.plotly_chart(throughput_efficiency_fig, width='stretch')
+                
+                # Throughput data table
+                st.subheader("Detailed Throughput Data")
+                formatted_throughput_df = filtered_throughput_df.copy()
+                formatted_throughput_df['model'] = formatted_throughput_df['model'].apply(format_model_name)
+                
+                # Select relevant columns for display
+                columns_to_show = ['model', 'tokens_per_second', 'output_tokens_per_second', 
+                                 'estimated_ttft_seconds', 'elapsed_seconds', 'total_tokens', 'mode', 'source']
+                available_columns = [col for col in columns_to_show if col in formatted_throughput_df.columns]
+                formatted_throughput_df_filtered = formatted_throughput_df[available_columns]
+                
+                st.dataframe(formatted_throughput_df_filtered, width='stretch')
+                
+        else:
+            st.warning("⚠️ No throughput data available.")
+    
+    # Model Comparison Tab
+    with tab4:
         st.header("🔍 Model Comparison")
         
         comparison_df = data.get('model_comparison', pd.DataFrame())
@@ -307,7 +389,7 @@ def main():
             st.warning("⚠️ No model comparison data available.")
     
     # Advanced Analytics Tab
-    with tab4:
+    with tab5:
         st.header("📊 Advanced Analytics")
         
         if not data or all(df.empty for df in data.values() if isinstance(df, pd.DataFrame)):
@@ -316,31 +398,39 @@ def main():
             # Custom metric calculator
             st.subheader("Custom Efficiency Metrics")
             
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
-                accuracy_weight = st.slider("Accuracy Weight", 0.0, 1.0, 0.7, 0.1)
+                accuracy_weight = st.slider("Accuracy Weight", 0.0, 1.0, 0.5, 0.1)
             with col2:
                 cost_weight = st.slider("Cost Weight", 0.0, 1.0, 0.3, 0.1)
+            with col3:
+                throughput_weight = st.slider("Throughput Weight", 0.0, 1.0, 0.2, 0.1)
             
             # Normalize weights
-            total_weight = accuracy_weight + cost_weight
+            total_weight = accuracy_weight + cost_weight + throughput_weight
             if total_weight > 0:
                 accuracy_weight /= total_weight
                 cost_weight /= total_weight
+                throughput_weight /= total_weight
             
             comparison_df = data.get('model_comparison', pd.DataFrame())
             
             if not comparison_df.empty:
-                # Calculate custom efficiency scores
+                # Calculate custom efficiency scores including throughput
                 custom_scores = []
                 for _, row in comparison_df.iterrows():
                     # Normalize cost (invert so lower cost = higher score)
                     max_cost = comparison_df['cost_per_1m_tokens'].max()
                     normalized_cost = (max_cost - row['cost_per_1m_tokens']) / max_cost if max_cost > 0 else 0
                     
+                    # Normalize throughput
+                    max_throughput = comparison_df['tokens_per_second'].max()
+                    normalized_throughput = row['tokens_per_second'] / max_throughput if max_throughput > 0 else 0
+                    
                     score = (row['avg_accuracy'] * accuracy_weight + 
-                            normalized_cost * cost_weight)
+                            normalized_cost * cost_weight +
+                            normalized_throughput * throughput_weight)
                     custom_scores.append(score)
                 
                 # Create custom ranking
@@ -351,8 +441,9 @@ def main():
                 
                 # Display custom ranking
                 st.subheader("Custom Efficiency Ranking")
-                custom_display = custom_df[['model', 'avg_accuracy', 'cost_per_1m_tokens', 
-                                          'custom_efficiency']].round(4)
+                display_columns = ['model', 'avg_accuracy', 'cost_per_1m_tokens', 'tokens_per_second', 'custom_efficiency']
+                available_display_columns = [col for col in display_columns if col in custom_df.columns]
+                custom_display = custom_df[available_display_columns].round(4)
                 st.dataframe(custom_display, width="stretch")
                 
                 # Visualize custom efficiency
