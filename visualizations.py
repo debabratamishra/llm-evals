@@ -322,66 +322,7 @@ class EvaluationVisualizer:
         
         return fig
     
-    def create_model_radar_chart(self, comparison_df: pd.DataFrame, model: str) -> go.Figure:
-        """
-        Create a radar chart for a specific model showing normalized metrics.
-        
-        Args:
-            comparison_df: DataFrame with model comparison data
-            model: Model name to visualize
-        
-        Returns:
-            Plotly figure
-        """
-        model_data = comparison_df[comparison_df['model'] == model]
-        
-        if model_data.empty:
-            return self._create_empty_figure(f"No data available for {model}")
-        
-        row = model_data.iloc[0]
-        
-        # Normalize metrics (0-1 scale)
-        max_values = comparison_df.max()
-        
-        metrics = {
-            'Accuracy': row['avg_accuracy'],
-            'Cost Efficiency': (1 - (row['cost_per_1m_tokens'] / max_values['cost_per_1m_tokens'])) if max_values['cost_per_1m_tokens'] > 0 else 0
-        }
-        
-        categories = list(metrics.keys())
-        values = list(metrics.values())
-        
-        # Close the radar chart
-        categories.append(categories[0])
-        values.append(values[0])
-        
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatterpolar(
-            r=values,
-            theta=categories,
-            fill='toself',
-            name=self._format_model_name(model),
-            line_color=self.color_palette[0]
-        ))
-        
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 1],
-                    tickfont=dict(color='black')
-                ),
-                angularaxis=dict(
-                    tickfont=dict(color='black')
-                )
-            ),
-            title=f'Model Profile - {self._format_model_name(model)}',
-            height=400,
-            font=dict(color='black')
-        )
-        
-        return fig
+    # Model profile visualization removed as per request
     
     def create_benchmark_heatmap(self, performance_df: pd.DataFrame) -> go.Figure:
         """

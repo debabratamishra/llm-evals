@@ -33,9 +33,7 @@ A comprehensive dashboard for visualizing and analyzing evaluation results of La
 
 4. **🔍 Model Comparison**
    - Efficiency scatter plots (accuracy vs cost)
-   - Model profile radar charts
    - Automated model rankings with efficiency scores
-   - Custom efficiency metrics with adjustable weights
 
 5. **📊 Advanced Analytics**
    - Multi-dimensional efficiency scoring (accuracy + cost + throughput)
@@ -160,7 +158,6 @@ The dashboard automatically loads evaluation data from the `data/` directory. Th
 
 4. **🔍 Model Comparison**
    - Efficiency analysis (accuracy vs cost)
-   - Radar charts for model profiles
    - Customizable ranking systems
 
 5. **📊 Advanced Analytics**

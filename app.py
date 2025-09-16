@@ -345,19 +345,7 @@ def main():
             efficiency_fig = visualizer.create_efficiency_scatter(comparison_df)
             st.plotly_chart(efficiency_fig, width='stretch')
             
-            # Model selector for radar chart
-            st.subheader("Model Profile Analysis")
-            
-            model_options = comparison_df['model'].unique()
-            selected_model_radar = st.selectbox(
-                "Select Model for Profile Analysis",
-                model_options,
-                format_func=format_model_name,
-                key="radar_model_selector"
-            )
-            
-            radar_fig = visualizer.create_model_radar_chart(comparison_df, selected_model_radar)
-            st.plotly_chart(radar_fig, width='stretch')
+            # Removed model profile visualization for clarity
             
             # Model ranking
             st.subheader("Model Rankings")
