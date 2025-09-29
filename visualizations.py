@@ -416,22 +416,12 @@ class EvaluationVisualizer:
             )
         )
         
-        fig.add_trace(
-            go.Bar(
-                x=[self._format_model_name(name) for name in throughput_df['model']],
-                y=throughput_df['output_tokens_per_second'],
-                name='Output Tokens/Second',
-                marker_color=self.color_palette[1],
-                yaxis='y'
-            )
-        )
-        
         fig.update_layout(
             title='Throughput Analysis: Tokens per Second',
             xaxis_title='Model',
             yaxis_title='Tokens per Second',
             height=500,
-            barmode='group',
+            showlegend=False,
             plot_bgcolor=self.theme['background_color']
         )
         
