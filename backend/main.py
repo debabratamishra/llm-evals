@@ -1,0 +1,383 @@
+import os
+import csv
+import io
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
+import json
+
+from database import Database
+from evaluator import EvaluationRunner
+
+app = FastAPI(title="LLM Evaluation Starter Framework API")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+db = Database()
+
+# Pydantic schemas
+class ModelConfig(BaseModel):
+    run_name: str = Field(..., example="Llama 3.2 on Reasoning Benchmark")
+    dataset_id: str = Field(..., example="logical_reasoning_benchmark")
+    model_provider: str = Field(..., example="openrouter")  # mock | ollama | ollama_cloud | openrouter
+    model_name: str = Field(..., example="meta-llama/llama-3.1-8b-instruct:free")
+    temperature: float = Field(0.2, ge=0.0, le=2.0)
+    system_prompt: Optional[str] = ""
+    # Per-provider credentials (fall back to env vars when omitted)
+    ollama_api_key: Optional[str] = None       # only needed for ollama_cloud
+    ollama_base_url: Optional[str] = None      # ollama local (default localhost:11434) or cloud endpoint
+    openrouter_api_key: Optional[str] = None
+
+class ManualCase(BaseModel):
+    question: str
+    ideal_answer: str
+
+class DatasetCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    cases: List[ManualCase]
+
+class HFImportRequest(BaseModel):
+    path: str
+    config: Optional[str] = None
+    split: str
+    question_column: str
+    answer_column: str
+    choices_column: Optional[str] = None
+    limit: int = 50
+    dataset_name: str
+    dataset_description: Optional[str] = ""
+
+@app.get("/api/check-keys")
+async def check_keys():
+    """Checks which API keys are pre-configured as environment variables."""
+    return {
+        "ollama_api_key_set": bool(os.environ.get("OLLAMA_API_KEY")),
+        "ollama_base_url_set": bool(os.environ.get("OLLAMA_BASE_URL")),
+        "openrouter_api_key_set": bool(os.environ.get("OPENROUTER_API_KEY")),
+        # Surface the configured Ollama base URL so the frontend can pre-fill it
+        "ollama_base_url": os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+    }
+
+# Dataset endpoints
+@app.get("/api/datasets")
+async def list_datasets():
+    return db.get_datasets()
+
+# HuggingFace Datasets Integration endpoints
+@app.get("/api/datasets/preview-hf")
+async def preview_hf(path: str):
+    """Fetches structure metadata and preview rows from a Hugging Face Hub dataset."""
+    try:
+        # 1. Fetch available configurations (subsets)
+        try:
+            from datasets import get_dataset_config_names
+            configs = get_dataset_config_names(path)
+        except Exception:
+            configs = []
+            
+        config_name = configs[0] if configs else None
+        
+        # 2. Fetch available splits
+        try:
+            from datasets import get_dataset_split_names
+            splits = get_dataset_split_names(path, config_name=config_name)
+        except Exception:
+            splits = ["train", "validation", "test"]
+            
+        split_name = "validation" if "validation" in splits else ("test" if "test" in splits else (splits[0] if splits else "train"))
+        
+        # 3. Stream a small preview of rows
+        from datasets import load_dataset
+        preview_rows = []
+        try:
+            ds = load_dataset(path, name=config_name, split=split_name, streaming=True)
+            iterator = iter(ds)
+            for _ in range(3):
+                try:
+                    preview_rows.append(next(iterator))
+                except StopIteration:
+                    break
+        except Exception:
+            # Fallback to standard full load (slower, but covers datasets without streaming support)
+            try:
+                ds = load_dataset(path, name=config_name, split=split_name)
+                preview_rows = [ds[i] for i in range(min(3, len(ds)))]
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Could not load Hugging Face dataset: {str(e)}")
+                
+        if not preview_rows:
+            raise HTTPException(status_code=400, detail="Hugging Face dataset has no valid records.")
+            
+        columns = list(preview_rows[0].keys())
+        
+        return {
+            "configs": configs,
+            "splits": splits,
+            "columns": columns,
+            "preview_rows": preview_rows
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to preview HuggingFace dataset '{path}': {str(e)}")
+
+@app.post("/api/datasets/import-hf")
+async def import_hf(req: HFImportRequest):
+    """Downloads rows from Hugging Face, applies mapped schema, and stores it locally."""
+    try:
+        from datasets import load_dataset
+        
+        # Load dataset
+        try:
+            ds = load_dataset(req.path, name=req.config, split=req.split, streaming=True)
+            iterator = iter(ds)
+            rows = []
+            for _ in range(req.limit):
+                try:
+                    rows.append(next(iterator))
+                except StopIteration:
+                    break
+        except Exception:
+            # Non-streaming fallback
+            ds = load_dataset(req.path, name=req.config, split=req.split)
+            rows = [ds[i] for i in range(min(req.limit, len(ds)))]
+            
+        if not rows:
+            raise HTTPException(status_code=400, detail="Hugging Face dataset holds no records under selected config/split.")
+            
+        cases = []
+        choice_labels = ["A", "B", "C", "D", "E", "F", "G", "H"]
+        
+        for idx, row in enumerate(rows):
+            question = str(row.get(req.question_column) or "").strip()
+            
+            # Retrieve choices for multiple choice QAs
+            choices = None
+            if req.choices_column:
+                choices = row.get(req.choices_column)
+                
+            raw_answer = row.get(req.answer_column)
+            
+            # Map choice index to string text
+            if choices and isinstance(choices, list) and len(choices) > 0:
+                formatted_choices = "\n".join([
+                    f"{choice_labels[j]}. {choice_text}" 
+                    for j, choice_text in enumerate(choices) 
+                    if j < len(choice_labels)
+                ])
+                question = f"{question}\n\nChoices:\n{formatted_choices}"
+                
+                try:
+                    ans_idx = int(raw_answer)
+                    if 0 <= ans_idx < len(choices):
+                        ideal_answer = f"{choice_labels[ans_idx]}. {choices[ans_idx]}"
+                    else:
+                        ideal_answer = str(raw_answer)
+                except (ValueError, TypeError):
+                    # Answer is already choice option code 'A', 'B', etc.
+                    raw_str = str(raw_answer).strip().upper()
+                    if raw_str in choice_labels:
+                        lbl_idx = choice_labels.index(raw_str)
+                        if lbl_idx < len(choices):
+                            ideal_answer = f"{raw_str}. {choices[lbl_idx]}"
+                        else:
+                            ideal_answer = raw_str
+                    else:
+                        ideal_answer = str(raw_answer)
+            else:
+                # Text answers (like MS MARCO answers)
+                if isinstance(raw_answer, list):
+                    ideal_answer = next((str(x) for x in raw_answer if x), "")
+                else:
+                    ideal_answer = str(raw_answer)
+                    
+            if question and ideal_answer:
+                cases.append({
+                    "id": f"hf-case-{idx+1}",
+                    "question": question,
+                    "ideal_answer": ideal_answer
+                })
+                
+        if not cases:
+            raise HTTPException(status_code=400, detail="Column mapping returned 0 valid cases. Verify column headers.")
+            
+        dataset = {
+            "name": req.dataset_name,
+            "description": req.dataset_description or f"Imported from Hugging Face: {req.path}",
+            "cases": cases
+        }
+        saved = db.save_dataset(dataset)
+        return saved
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to import dataset: {str(e)}")
+
+@app.get("/api/datasets/{dataset_id}")
+async def get_dataset(dataset_id: str):
+    dataset = db.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return dataset
+
+@app.post("/api/datasets")
+async def create_dataset(payload: DatasetCreate):
+    if not payload.name:
+        raise HTTPException(status_code=400, detail="Dataset name is required")
+    if not payload.cases:
+        raise HTTPException(status_code=400, detail="Dataset must contain at least one case")
+        
+    dataset = {
+        "name": payload.name,
+        "description": payload.description,
+        "cases": [{"id": f"case-{i+1}", "question": c.question, "ideal_answer": c.ideal_answer} for i, c in enumerate(payload.cases)]
+    }
+    return db.save_dataset(dataset)
+
+@app.post("/api/datasets/upload")
+async def upload_dataset(
+    name: str = Form(...),
+    description: str = Form(""),
+    file: UploadFile = File(...)
+):
+    contents = await file.read()
+    filename = file.filename.lower()
+    cases = []
+
+    try:
+        if filename.endswith(".json"):
+            data = json.loads(contents.decode("utf-8"))
+            if isinstance(data, list):
+                raw_cases = data
+            elif isinstance(data, dict) and "cases" in data:
+                raw_cases = data["cases"]
+            else:
+                raise ValueError("JSON must be a list of Q&A cases or an object containing a 'cases' list.")
+            
+            for i, item in enumerate(raw_cases):
+                q = item.get("question") or item.get("prompt")
+                a = item.get("ideal_answer") or item.get("reference") or item.get("answer")
+                if not q or not a:
+                    raise ValueError(f"Case {i+1} is missing 'question' or 'ideal_answer'")
+                cases.append({
+                    "id": item.get("id", f"case-{i+1}"),
+                    "question": q,
+                    "ideal_answer": a
+                })
+                
+        elif filename.endswith(".csv"):
+            decoded = contents.decode("utf-8")
+            reader = csv.DictReader(io.StringIO(decoded))
+            
+            fieldnames = reader.fieldnames or []
+            question_key = None
+            answer_key = None
+            
+            for f in fieldnames:
+                fl = f.lower().strip()
+                if fl in ["question", "prompt", "query", "input"]:
+                    question_key = f
+                if fl in ["ideal_answer", "answer", "reference", "target", "gold"]:
+                    answer_key = f
+                    
+            if not question_key or not answer_key:
+                if len(fieldnames) >= 2:
+                    question_key = fieldnames[0]
+                    answer_key = fieldnames[1]
+                else:
+                    raise ValueError("CSV must have at least two columns for question and ideal answer.")
+                    
+            for i, row in enumerate(reader):
+                q = row.get(question_key)
+                a = row.get(answer_key)
+                if q and a:
+                    cases.append({
+                        "id": row.get("id", f"case-{i+1}"),
+                        "question": q.strip(),
+                        "ideal_answer": a.strip()
+                    })
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format. Please upload .json or .csv")
+
+        if not cases:
+            raise ValueError("No valid Q&A cases found in the uploaded file.")
+
+        dataset = {
+            "name": name,
+            "description": description,
+            "cases": cases
+        }
+        return db.save_dataset(dataset)
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse dataset file: {str(e)}")
+
+
+
+@app.delete("/api/datasets/{dataset_id}")
+async def delete_dataset(dataset_id: str):
+    success = db.delete_dataset(dataset_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return {"status": "success", "message": "Dataset deleted successfully"}
+
+# Evaluation Runs endpoints
+@app.get("/api/runs")
+async def list_runs():
+    return db.get_runs()
+
+@app.get("/api/runs/{run_id}")
+async def get_run(run_id: str):
+    run = db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Evaluation run not found")
+    return run
+
+@app.post("/api/runs")
+async def execute_run(config: ModelConfig):
+    # Fetch dataset
+    dataset = db.get_dataset(config.dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    # Resolve keys: prefer request payload, fall back to env vars
+    ollama_key        = config.ollama_api_key        or os.environ.get("OLLAMA_API_KEY")
+    ollama_base_url   = config.ollama_base_url       or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+    openrouter_key    = config.openrouter_api_key    or os.environ.get("OPENROUTER_API_KEY")
+
+    # Provider-specific validation
+    if config.model_provider == "ollama_cloud" and not ollama_key:
+        raise HTTPException(status_code=400, detail="An API key is required for cloud-hosted Ollama. Set OLLAMA_API_KEY or provide it in the request.")
+    if config.model_provider == "ollama_cloud" and ollama_base_url == "http://localhost:11434":
+        raise HTTPException(status_code=400, detail="A custom cloud base URL is required for ollama_cloud. The local default URL cannot be used.")
+    if config.model_provider == "openrouter" and not openrouter_key:
+        raise HTTPException(status_code=400, detail="OpenRouter API key is required. Set OPENROUTER_API_KEY or provide it in the request.")
+
+    runner = EvaluationRunner(
+        ollama_api_key=ollama_key,
+        ollama_base_url=ollama_base_url,
+        openrouter_api_key=openrouter_key,
+    )
+
+    try:
+        run_data = runner.run_evaluation(dataset, config.dict())
+        saved_run = db.save_run(run_data)
+        return saved_run
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
+
+@app.delete("/api/runs/{run_id}")
+async def delete_run(run_id: str):
+    success = db.delete_run(run_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"status": "success", "message": "Evaluation run deleted successfully"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

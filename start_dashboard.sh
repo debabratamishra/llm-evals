@@ -1,52 +1,68 @@
 #!/bin/bash
 
-# LLM Evaluation Dashboard Quick Start Script
+# LLM Evaluation Dashboard Starter Framework Quick Start Script
+echo "🧠 Starting LLM Evaluation Starter Framework..."
+echo "================================================="
 
-echo "🧠 Starting LLM Evaluation Dashboard..."
-echo "======================================="
-
-# Check if conda is available
-if ! command -v conda &> /dev/null; then
-    echo "❌ Error: Conda is not installed or not in PATH"
+# Check if uv is available
+if ! command -v uv &> /dev/null; then
+    echo "❌ Error: 'uv' is not installed or not in PATH"
+    echo "This project requires uv for python environment management."
+    echo "Please install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
     exit 1
 fi
 
-# Check if llm_ui environment exists
-if ! conda env list | grep -q "llm_ui"; then
-    echo "❌ Error: Conda environment 'llm_ui' not found"
-    echo "Please create the environment first with: conda create -n llm_ui python=3.12"
+# Check if Node/NPM is available
+if ! command -v npm &> /dev/null; then
+    echo "❌ Error: Node.js/NPM is not installed"
+    echo "Please install Node.js (v18+) to run the React frontend."
     exit 1
 fi
 
-# Navigate to dashboard directory
+# Navigate to script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "📂 Working directory: $SCRIPT_DIR"
+echo "📂 Project root: $SCRIPT_DIR"
 
-# Activate environment and check dependencies
-echo "🔧 Activating llm_ui environment..."
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate llm_ui
+# Clean up any leftover processes on script exit
+cleanup() {
+    echo ""
+    echo "🛑 Shutting down servers..."
+    if [ ! -z "$BACKEND_PID" ]; then
+        kill $BACKEND_PID 2>/dev/null
+    fi
+    if [ ! -z "$FRONTEND_PID" ]; then
+        kill $FRONTEND_PID 2>/dev/null
+    fi
+    echo "👋 Dashboard stopped. Thank you!"
+    exit 0
+}
 
-# Install/update dependencies if needed
-echo "📦 Checking dependencies..."
-pip install -q -r requirements.txt
+trap cleanup SIGINT SIGTERM
 
-# Check if evaluation data exists
-EVAL_DIR="./data"
-if [ ! -d "$EVAL_DIR" ]; then
-    echo "⚠️  Warning: Evaluation directory not found at $EVAL_DIR"
-    echo "You can specify a different data directory in the dashboard sidebar."
-fi
+# Start FastAPI backend
+echo "⚡ Starting FastAPI backend..."
+uv run python backend/main.py &
+BACKEND_PID=$!
 
-# Start the dashboard
-echo "🚀 Starting Streamlit dashboard..."
-echo "📊 Dashboard will be available at: http://localhost:8501"
-echo "🔄 Press Ctrl+C to stop the dashboard"
+# Start React frontend
+echo "⚛️  Starting Vite React frontend..."
+cd frontend
+npm run dev &
+FRONTEND_PID=$!
+
+# Give servers a moment to bind ports
+sleep 2
+
+echo ""
+echo "🚀 Servers are up and running!"
+echo "   ---------------------------------------"
+echo "   ⚛️  Frontend Dashboard: http://localhost:3000"
+echo "   ⚡ Backend API Docs:   http://localhost:8000/docs"
+echo "   ---------------------------------------"
+echo "🔄 Press Ctrl+C to stop both servers"
 echo ""
 
-streamlit run app.py --server.port 8501
-
-echo ""
-echo "👋 Dashboard stopped. Thanks for using the LLM Evaluation Dashboard!"
+# Keep script running and wait for background processes
+wait $BACKEND_PID $FRONTEND_PID
