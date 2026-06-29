@@ -133,9 +133,3 @@ Column headers are matched case-insensitively. Accepted aliases: `question` / `p
 | Cost | Estimated USD based on provider token pricing |
 
 The LLM judge cascades through available providers (OpenRouter → local Ollama) and falls back to heuristic scoring when no provider is reachable.
-
----
-
-## License
-
-[MIT](LICENSE)
