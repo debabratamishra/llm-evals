@@ -1,15 +1,13 @@
 [project]
 name = "llm-evals"
 version = "0.1.0"
-description = "Add your description here"
+description = "LLM evaluation framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "datasets>=5.0.0",
     "fastapi>=0.138.1",
-    "google-generativeai>=0.8.6",
     "numpy>=2.5.0",
-    "openai>=2.44.0",
     "pandas>=3.0.4",
     "python-multipart>=0.0.32",
     "uvicorn>=0.49.0",

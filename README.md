@@ -22,8 +22,7 @@ llm-evals/
 ├── backend/              # FastAPI application
 │   ├── main.py           # REST API endpoints
 │   ├── evaluator.py      # LiteLLM-backed evaluation engine
-│   ├── database.py       # File-based JSON storage
-│   └── requirements.txt
+│   └── database.py       # File-based JSON storage
 ├── frontend/             # React + Vite SPA
 │   └── src/
 │       ├── App.jsx
