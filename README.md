@@ -1,337 +1,142 @@
-# LLM Evaluation Dashboard
+# LLM Evaluation Framework
 
-A comprehensive dashboard for visualizing and analyzing evaluation results of Large Language Models, including performance metrics, cost analysis, and model comparisons.
+A full-stack framework for benchmarking and evaluating Large Language Models against golden Q&A datasets. Run evaluations against local or cloud-hosted models, score outputs with multiple metrics, and analyse results in an interactive dashboard.
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.4+-red.svg)
-![License](https://img.shields.io/badge/License-Apache2.0-green.svg)
+---
 
-![Home Page of LLM Evals](llmevals.gif)
+## Features
 
-## 🚀 Features
+- **Multi-backend LLM support** via [LiteLLM](https://github.com/BerriAI/litellm): Ollama (local & cloud), OpenRouter — with per-run API key input or environment variables
+- **Dataset Manager**: import datasets from JSON, CSV, or Hugging Face Hub; create and edit cases manually
+- **Evaluation metrics**: Exact Match, Sequence Similarity, and LLM-as-a-Judge (Correctness, Completeness, Clarity scored 1–5)
+- **Cost & latency tracking**: per-case token counts, latency, and estimated USD cost
+- **Run history & comparison**: leaderboard, performance charts, per-case drill-down with pass/fail filtering
+- **Sandbox mode**: deterministic mock responses for pipeline testing without any API keys
 
-### 📊 Dashboard Sections
+---
 
-1. **🎯 Performance & TopN Analysis**
-   - Model accuracy comparisons across benchmarks
-   - TopN performance metrics (Top@1, Top@2, Top@5)
-   - Performance heatmaps for model-benchmark combinations
-   - Detailed performance progression analysis
+## Architecture
 
-2. **💰 Cost Analysis**
-   - Cost per token analysis (1K and 1M tokens)
-   - Total run cost comparisons
-   - Cost efficiency metrics
-   - Detailed cost breakdown by model
+```
+llm-evals/
+├── backend/              # FastAPI application
+│   ├── main.py           # REST API endpoints
+│   ├── evaluator.py      # LiteLLM-backed evaluation engine
+│   ├── database.py       # File-based JSON storage
+│   └── requirements.txt
+├── frontend/             # React + Vite SPA
+│   └── src/
+│       ├── App.jsx
+│       └── components/
+│           ├── DashboardOverview.jsx
+│           ├── DatasetManager.jsx
+│           ├── EvaluationRunner.jsx
+│           ├── RunsHistory.jsx
+│           └── RunDetails.jsx
+├── data/
+│   ├── datasets/         # Stored golden datasets (JSON)
+│   └── runs/             # Completed evaluation runs (JSON)
+└── start_dashboard.sh    # One-command startup script
+```
 
-3. **⚡ Throughput Analysis**
-   - Tokens per Second (TPS) measurements
-   - Time to First Token (TTFT) analysis  
-   - Output token generation speed metrics
-   - Throughput efficiency scatter plots (accuracy vs speed)
-   - Detailed throughput data tables
+---
 
-4. **🔍 Model Comparison**
-   - Efficiency scatter plots (accuracy vs cost)
-   - Automated model rankings with efficiency scores
-
-5. **📊 Advanced Analytics**
-   - Multi-dimensional efficiency scoring (accuracy + cost + throughput)
-   - Data export functionality (CSV download)
-   - Interactive visualizations with tooltips
-   - Comprehensive metrics tables
-
-## 🛠️ Installation
+## Quick Start
 
 ### Prerequisites
-- Python 3.10 or higher
-- Conda (recommended) or virtualenv
 
-### Quick Setup
+- [Node.js](https://nodejs.org/) v18+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/debabratamishra/llm-evals
-   cd llm-evals
-   ```
+### 1. Clone
 
-2. **Create and activate a conda environment:**
-   ```bash
-   conda create -n llm_ui python=3.12
-   conda activate llm_ui
-   ```
+```bash
+git clone https://github.com/debabratamishra/llm-evals
+cd llm-evals
+```
 
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 2. Start
 
-## 🚀 Usage
-
-### Running the Dashboard
-
-#### Option 1: Using the startup script (Recommended)
 ```bash
 chmod +x start_dashboard.sh
 ./start_dashboard.sh
 ```
 
-#### Option 2: Manual startup
-```bash
-conda activate llm_ui
-streamlit run app.py
-```
+The script installs all dependencies, starts the FastAPI backend and the Vite dev server, and prints the URLs.
 
-The dashboard will be available at `http://localhost:8501`
-
-### 📁 Data Structure
-
-The dashboard automatically loads evaluation data from the `data/` directory. The following file formats are supported:
-
-- `advanced_eval_summary.json` - Summary evaluation files
-- `*__*_details.json` - Detailed evaluation results  
-- `*__cost_throughput.json` - Cost and throughput metrics
-
-#### Expected Data Format
-
-**Performance Metrics:**
-```json
-{
-  "model_name": {
-    "benchmark_name": {
-      "n": 100,
-      "acc": 0.75,
-      "top@1": 0.75,
-      "top@2": 0.85,
-      "top@5": 0.95
-    }
-  }
-}
-```
-
-**Cost & Throughput Metrics:**
-```json
-{
-  "model_name": {
-    "cost_throughput": {
-      "cost": {
-        "run_cost_usd": 0.01,
-        "cost_per_1k_tokens_usd": 0.0001,
-        "cost_per_1m_tokens_usd": 0.1
-      },
-      "mode": "api",
-      "elapsed_seconds": 45.2,
-      "total_tokens": 25000,
-      "input_tokens": 15000,
-      "output_tokens": 10000
-    }
-  }
-}
-    }
-  }
-}
-```
-
-## 🎮 Dashboard Navigation
-
-### Sidebar Controls
-- **Data Directory**: Configure the path to evaluation data (defaults to `./data`)
-- Real-time data loading with progress indicators
-
-### Main Tabs
-
-1. **🎯 Performance & TopN Analysis**
-   - Select performance metrics to visualize
-   - Compare TopN accuracy across models
-   - View performance heatmaps
-
-2. **💰 Cost Analysis**
-   - Analyze cost per token metrics
-   - Compare total run costs
-   - Identify cost-effective models
-
-3. **⚡ Throughput Analysis**
-   - Tokens per Second (TPS) performance metrics
-   - Time to First Token (TTFT) measurements
-   - Throughput efficiency analysis (accuracy vs speed)
-   - Detailed throughput data tables
-
-4. **🔍 Model Comparison**
-   - Efficiency analysis (accuracy vs cost)
-   - Customizable ranking systems
-
-5. **📊 Advanced Analytics**
-   - Multi-dimensional efficiency calculations (accuracy + cost + throughput)
-   - Data export functionality
-   - Interactive metric visualization
-
-## 📊 Visualization Features
-
-- **Interactive Charts**: Built with Plotly for responsive visualization
-- **Custom Tooltips**: Detailed explanations for all metrics
-- **Export Options**: Download charts and data as CSV/PNG
-- **Responsive Design**: Optimized for different screen sizes
-- **Real-time Updates**: Data refreshes automatically when changed
-
-## ⚡ Throughput Metrics Explained
-
-### Key Metrics
-- **Tokens per Second (TPS)**: Total throughput including both input and output processing
-- **Output Tokens per Second**: Generation speed for output tokens only
-- **Time to First Token (TTFT)**: Latency measurement for initial response (estimated)
-- **Throughput Efficiency**: Composite metric combining accuracy and speed performance
-
-### Use Cases
-- **Latency Optimization**: Use TTFT metrics for real-time applications
-- **Throughput Planning**: Use TPS metrics for batch processing scenarios  
-- **Balanced Selection**: Use efficiency metrics for optimal accuracy-speed trade-offs
-- **Cost-Performance Analysis**: Combined with cost metrics for comprehensive evaluation
-
-## 🔧 Configuration
-
-### Custom Data Directory
-You can specify a different data directory using the sidebar input or by modifying the default path in `app.py`:
-
-```python
-default_data_dir = os.path.join(dashboard_dir, "your_data_directory")
-```
-
-### Adding New Metrics
-
-1. **Extend the data loader** (`data_loader.py`):
-   ```python
-   def _extract_new_metrics(self) -> pd.DataFrame:
-       # Add your metric extraction logic here
-       pass
-   ```
-
-2. **Create visualizations** (`visualizations.py`):
-   ```python
-   def create_new_chart(self, data: pd.DataFrame) -> go.Figure:
-       # Add your visualization logic here
-       pass
-   ```
-
-3. **Update the dashboard** (`app.py`):
-   ```python
-   # Add new tabs or sections
-   with st.tab("New Analysis"):
-       new_fig = visualizer.create_new_chart(data)
-       st.plotly_chart(new_fig)
-   ```
-
-## 🏗️ Architecture
-
-### Component Overview
-
-```
-llm-evals/
-├── app.py                 # Main Streamlit application
-├── data_loader.py         # Data loading and processing
-├── visualizations.py      # Chart and visualization creation
-├── requirements.txt       # Python dependencies
-├── start_dashboard.sh     # Quick start script
-└── data/                  # Evaluation data directory
-    ├── advanced_eval_summary.json
-    ├── *__cost_throughput.json
-    └── *__*_details.json
-```
-
-### Data Flow
-
-1. **Load** → JSON files are loaded from the `data/` directory
-2. **Process** → Data is parsed and structured into pandas DataFrames  
-3. **Visualize** → Charts are created using Plotly
-4. **Interact** → Users can filter, compare, and export data
-
-## 🧪 Testing
-
-To verify the installation and data loading:
-
-```bash
-conda activate llm_ui
-python -c "
-from data_loader import EvaluationDataLoader
-loader = EvaluationDataLoader('./data')
-data = loader.load_all_data()
-print(f'Loaded {len(data)} data sections')
-print('Available sections:', list(data.keys()))
-"
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### Data Not Loading
-- **Check file format**: Ensure JSON files are properly formatted
-- **Verify data directory**: Confirm the `data/` directory exists and contains files
-- **File permissions**: Ensure read permissions on data files
-
-#### Import Errors
-```bash
-# Reinstall dependencies
-conda activate llm_ui
-pip install --upgrade -r requirements.txt
-```
-
-#### Performance Issues
-- **Large datasets**: Consider filtering data for better performance
-- **Memory usage**: Monitor system resources with large evaluation datasets
-- **Browser cache**: Clear browser cache if visualizations aren't updating
-
-#### Visualization Problems
-- **Missing data**: Check console logs for data processing errors
-- **Chart rendering**: Ensure browser supports modern JavaScript features
-- **Interactive features**: Verify Plotly.js is loading correctly
-
-### Debug Mode
-
-Run the dashboard in debug mode:
-```bash
-streamlit run app.py --logger.level=debug
-```
-
-## 📈 Performance Optimization
-
-- **Data Caching**: Streamlit automatically caches loaded data
-- **Efficient Processing**: Use pandas vectorized operations
-- **Memory Management**: Process data in chunks for large datasets
-- **Visualization**: Limit data points for complex charts
-
-## 🤝 Contributing
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature-name`
-3. **Make changes** with proper documentation
-4. **Test thoroughly** with sample data
-5. **Submit a pull request**
-
-### Development Guidelines
-
-- Follow PEP 8 style guidelines
-- Add comprehensive docstrings
-- Include type hints where appropriate
-- Test with various data formats
-- Update documentation for new features
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Streamlit** for the web application framework
-- **Plotly** for interactive visualizations
-- **Pandas** for data processing capabilities
-
-## 📧 Support
-
-For issues, questions, or contributions:
-- Create an issue in the repository
-- Check existing documentation
-- Review troubleshooting section
+| Service | URL |
+|---|---|
+| Dashboard | http://localhost:3000 |
+| API docs (Swagger) | http://localhost:8000/docs |
 
 ---
 
-**Built with ❤️ for the LLM evaluation community**
+## LLM Providers
+
+All model calls are routed through [LiteLLM](https://github.com/BerriAI/litellm). Four providers are available in the **Run Evaluation** tab:
+
+| Provider | Key required | Notes |
+|---|---|---|
+| **Sandbox** | No | Deterministic mock — no network access |
+| **Ollama — Local** | No | Requires `ollama serve` running locally |
+| **Ollama — Cloud** | Yes | Any OpenAI-compatible remote Ollama endpoint |
+| **OpenRouter** | Yes | Access to 200+ models via a single API key |
+
+API keys can be supplied in two ways — they are never persisted to disk:
+
+**Environment variables** (recommended for repeated use):
+```bash
+export OLLAMA_API_KEY="..."        # Ollama cloud only
+export OLLAMA_BASE_URL="https://…" # Ollama cloud only
+export OPENROUTER_API_KEY="..."
+```
+
+**Per-run form input**: enter keys directly in the Run Evaluation tab. Keys are sent with the request and discarded after the evaluation completes.
+
+---
+
+## Dataset Formats
+
+Datasets can be uploaded as JSON or CSV, or imported directly from [Hugging Face Hub](https://huggingface.co/datasets).
+
+**JSON**
+```json
+[
+  {
+    "id": "case-01",
+    "question": "What is the primary mechanism of Metformin?",
+    "ideal_answer": "Metformin decreases hepatic glucose production and improves insulin sensitivity."
+  }
+]
+```
+
+**CSV**
+```csv
+question,ideal_answer
+What is the capital of France?,Paris.
+Explain first-pass metabolism.,A drug is metabolised by liver enzymes before entering systemic circulation.
+```
+
+Column headers are matched case-insensitively. Accepted aliases: `question` / `prompt` / `query`; `ideal_answer` / `answer` / `reference`.
+
+---
+
+## Evaluation Metrics
+
+| Metric | Description |
+|---|---|
+| Exact Match | Binary (0/1) after alphanumeric normalisation |
+| Similarity | Sequence overlap score in [0, 1] |
+| LLM Correctness | Judge score 1–5: factual accuracy |
+| LLM Completeness | Judge score 1–5: coverage of reference points |
+| LLM Clarity | Judge score 1–5: coherence and readability |
+| Latency | Per-case response time in seconds |
+| Cost | Estimated USD based on provider token pricing |
+
+The LLM judge cascades through available providers (OpenRouter → local Ollama) and falls back to heuristic scoring when no provider is reachable.
+
+---
+
+## License
+
+[MIT](LICENSE)

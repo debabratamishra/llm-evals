@@ -1,0 +1,144 @@
+import os
+import json
+import uuid
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DATASETS_DIR = os.path.join(DATA_DIR, "datasets")
+RUNS_DIR = os.path.join(DATA_DIR, "runs")
+
+class Database:
+    def __init__(self):
+        # Create directories if they don't exist
+        os.makedirs(DATASETS_DIR, exist_ok=True)
+        os.makedirs(RUNS_DIR, exist_ok=True)
+        self.initialize_default_datasets()
+
+    def initialize_default_datasets(self):
+        """Seed the system with some high-quality logical reasoning datasets if empty."""
+        default_files = os.listdir(DATASETS_DIR)
+        has_logic = any(f.endswith(".json") and "logical_reasoning" in f for f in default_files)
+        
+        if not has_logic:
+            # Create a professional logical reasoning and puzzle benchmark dataset
+            logical_dataset = {
+                "id": "logical_reasoning_benchmark",
+                "name": "Logical Reasoning & Puzzles Benchmark",
+                "description": "A curated dataset of high-quality logical puzzles, mathematical reasoning, and algorithmic logic questions.",
+                "created_at": datetime.utcnow().isoformat(),
+                "cases": [
+                    {
+                        "id": "logic-01",
+                        "question": "A box contains 3 red balls and 7 blue balls. A player randomly draws two balls from the box one after another without replacement. What is the probability that both balls drawn are red? Express your answer as a simplified fraction.",
+                        "ideal_answer": "The probability is 1/15. \n\nProof:\n1. The probability of drawing a red ball on the first draw is 3/10 (3 red balls out of 10 total balls).\n2. Since the drawing is without replacement, there are now 2 red balls and 7 blue balls left, making a total of 9 balls.\n3. The probability of drawing a red ball on the second draw is 2/9.\n4. The joint probability of drawing two red balls is: (3/10) * (2/9) = 6/90.\n5. Simplifying 6/90 by dividing the numerator and denominator by 6 yields 1/15."
+                    },
+                    {
+                        "id": "logic-02",
+                        "question": "You stand in front of two doors. One door leads to heaven, and the other leads to hell. In front of each door is a guard. One guard always tells the truth, and the other guard always lies. You do not know which guard is which, or which door leads where. You are allowed to ask exactly one guard exactly one question to find the door to heaven. What question should you ask?",
+                        "ideal_answer": "You should point to one of the doors and ask either guard: 'If I were to ask the other guard if this door leads to heaven, what would they say?'\n\nExplanation:\n1. If the door you pointed to indeed leads to heaven:\n   - The truth-teller would know the liar would say 'No'. Thus, the truth-teller answers 'No'.\n   - The liar would know the truth-teller would say 'Yes'. Since the liar must lie, they answer 'No'.\n2. If the door you pointed to leads to hell:\n   - The truth-teller would know the liar would say 'Yes'. Thus, the truth-teller answers 'Yes'.\n   - The liar would know the truth-teller would say 'No'. Since the liar must lie, they answer 'Yes'.\n\nIn both cases, both guards will give the exact same answer: 'No' if the door leads to heaven, and 'Yes' if the door leads to hell. Therefore, you should choose the door you pointed to if they answer 'No', and the other door if they answer 'Yes'."
+                    },
+                    {
+                        "id": "logic-03",
+                        "question": "A farmer needs to cross a river with a wolf, a goat, and a box of cabbage. His boat is small and can only hold himself and one of the three items at a time. If left unattended, the wolf will eat the goat, and the goat will eat the cabbage. How can the farmer get all three items safely to the other side of the river? Outline the step-by-step trips.",
+                        "ideal_answer": "Here is the step-by-step solution to safely cross the river:\n\n1. Take the goat across: The farmer takes the goat to the other side, leaving the wolf and cabbage together (safe). The farmer returns alone.\n2. Take the wolf across and bring back the goat: The farmer takes the wolf to the other side, leaves the wolf, and takes the goat back to the starting side (preventing the wolf from eating the goat). \n3. Take the cabbage across: The farmer leaves the goat at the start, takes the cabbage to the other side, leaving it with the wolf (safe). The farmer returns alone.\n4. Take the goat across: The farmer takes the goat across to the other side for the final time. All three items are now safely on the other side."
+                    },
+                    {
+                        "id": "logic-04",
+                        "question": "An algorithmic function receives a positive integer n. If n is even, it divides it by 2. If n is odd, it multiplies it by 3 and adds 1. This process is repeated. Write a Python function `collatz_steps(n)` that returns the number of steps required to reach the number 1. If n is 1, it should return 0.",
+                        "ideal_answer": "Here is the Python implementation using a simple loop:\n\n```python\ndef collatz_steps(n: int) -> int:\n    if n <= 0:\n        raise ValueError(\"n must be a positive integer\")\n    steps = 0\n    while n > 1:\n        if n % 2 == 0:\n            n = n // 2\n        else:\n            n = n * 3 + 1\n        steps += 1\n    return steps\n```\n\nExplanation:\n- We initialize a step counter to 0.\n- A `while` loop runs as long as `n` is greater than 1.\n- In each iteration, we apply the Collatz sequence rule (divide by 2 if even, or triple plus 1 if odd) and increment the step counter.\n- The loop terminates when `n` becomes 1, returning the total steps."
+                    },
+                    {
+                        "id": "logic-05",
+                        "question": "Four people need to cross a suspension bridge at night. They have only one flashlight, and the bridge is only strong enough to support two people at a time. Any crossing must be done with the flashlight. The four people walk at different speeds: Alice takes 1 minute to cross, Bob takes 2 minutes, Charlie takes 5 minutes, and Daniel takes 10 minutes. When two people cross together, they must walk at the slower person's pace. What is the minimum time (in minutes) required for all four to cross the bridge?",
+                        "ideal_answer": "The minimum time required is 17 minutes.\n\nHere is the optimal sequence of crossings:\n1. Alice and Bob cross the bridge with the flashlight (takes 2 minutes). Alice and Bob are on the other side.\n2. Alice returns with the flashlight (takes 1 minute). Alice is back; Bob is on the other side (Total time: 3 mins).\n3. Charlie and Daniel cross the bridge with the flashlight (takes 10 minutes). Charlie, Daniel, and Bob are on the other side.\n4. Bob returns with the flashlight (takes 2 minutes). Bob is back; Charlie and Daniel are on the other side (Total time: 15 mins).\n5. Alice and Bob cross the bridge with the flashlight (takes 2 minutes). All four are on the other side.\n\nTotal time: 2 + 1 + 10 + 2 + 2 = 17 minutes."
+                    }
+                ]
+            }
+
+            self.save_dataset(logical_dataset)
+
+    # Dataset Methods
+    def get_datasets(self) -> List[Dict[str, Any]]:
+        datasets = []
+        for filename in os.listdir(DATASETS_DIR):
+            if filename.endswith(".json"):
+                filepath = os.path.join(DATASETS_DIR, filename)
+                try:
+                    with open(filepath, "r") as f:
+                        datasets.append(json.load(f))
+                except Exception as e:
+                    print(f"Error loading dataset {filename}: {e}")
+        return sorted(datasets, key=lambda x: x.get("name", ""))
+
+    def get_dataset(self, dataset_id: str) -> Optional[Dict[str, Any]]:
+        filepath = os.path.join(DATASETS_DIR, f"{dataset_id}.json")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error reading dataset {dataset_id}: {e}")
+        return None
+
+    def save_dataset(self, dataset: Dict[str, Any]) -> Dict[str, Any]:
+        if "id" not in dataset or not dataset["id"]:
+            dataset["id"] = str(uuid.uuid4())
+        if "created_at" not in dataset:
+            dataset["created_at"] = datetime.utcnow().isoformat()
+        
+        filepath = os.path.join(DATASETS_DIR, f"{dataset['id']}.json")
+        with open(filepath, "w") as f:
+            json.dump(dataset, f, indent=2)
+        return dataset
+
+    def delete_dataset(self, dataset_id: str) -> bool:
+        filepath = os.path.join(DATASETS_DIR, f"{dataset_id}.json")
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            return True
+        return False
+
+    # Evaluation Run Methods
+    def get_runs(self) -> List[Dict[str, Any]]:
+        runs = []
+        for filename in os.listdir(RUNS_DIR):
+            if filename.endswith(".json"):
+                filepath = os.path.join(RUNS_DIR, filename)
+                try:
+                    with open(filepath, "r") as f:
+                        data = json.load(f)
+                        summary = {k: v for k, v in data.items() if k != "results"}
+                        runs.append(summary)
+                except Exception as e:
+                    print(f"Error loading run {filename}: {e}")
+        return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
+
+    def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        filepath = os.path.join(RUNS_DIR, f"{run_id}.json")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error reading run {run_id}: {e}")
+        return None
+
+    def save_run(self, run: Dict[str, Any]) -> Dict[str, Any]:
+        if "id" not in run or not run["id"]:
+            run["id"] = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
+        if "created_at" not in run:
+            run["created_at"] = datetime.utcnow().isoformat()
+            
+        filepath = os.path.join(RUNS_DIR, f"{run['id']}.json")
+        with open(filepath, "w") as f:
+            json.dump(run, f, indent=2)
+        return run
+
+    def delete_run(self, run_id: str) -> bool:
+        filepath = os.path.join(RUNS_DIR, f"{run_id}.json")
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            return True
+        return False
