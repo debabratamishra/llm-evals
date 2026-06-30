@@ -1,21 +1,13 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/LLM%20Evals-%F0%9F%94%8D-00f2fe?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48dGV4dCB4PSIwIiB5PSIxNCIgZm9udC1zaXplPSIxNCI+8o2dPC90ZXh0Pjwvc3ZnPg==">
-    <img alt="LLM Evals" src="https://img.shields.io/badge/LLM%20Evals-%F0%9F%94%8D-00f2fe?style=flat-square">
-  </picture>
-</p>
-
 <div align="center">
+
+# LLM Evaluation Framework
 
 [![License](https://img.shields.io/github/license/debabratamishra/llm-evals?style=flat-square&color=blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue?style=flat-square&logo=python&logoColor=ffd343)](pyproject.toml)
 [![Node](https://img.shields.io/badge/node-18%2B-5fa04e?style=flat-square&logo=node.js&logoColor=fff)](frontend/package.json)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.138%2B-009688?style=flat-square&logo=fastapi)](backend/main.py)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react)](frontend/src/App.jsx)
-[![Render](https://img.shields.io/badge/deploy%20on-Render-46e3b7?style=flat-square&logo=render)](DEPLOY.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com/debabratamishra/llm-evals/pulls)
-
-# LLM Evaluation Framework
 
 **Benchmark, evaluate, and compare LLMs — from your browser.**
 
@@ -23,7 +15,7 @@ Upload or import evaluation datasets, run multi-provider evaluations (OpenRouter
 Nvidia NIM, or local sandbox), and analyse results in a real-time dashboard.
 Support standard single-model evals and head-to-head arena comparisons.
 
-[🌐 Live Demo](#-live-demo) · [🚀 Quick Start](#-quick-start) · [📖 API Docs](#-api-documentation) · [🗺️ Roadmap](#-roadmap) · [🤝 Contributing](#-contributing)
+[🚀 Quick Start](#-quick-start) · [📖 API Docs](#-api-documentation) · [🗺️ Roadmap](#-roadmap) · [🤝 Contributing](#-contributing)
 
 </div>
 
@@ -49,21 +41,21 @@ Support standard single-model evals and head-to-head arena comparisons.
 
 ```
 ┌──────────────────────────────────────────────┐
-│             Browser (User)                    │
+│             Browser (User)                   │
 │    ┌─────────────────────────────────┐       │
 │    │      React SPA (Dashboard)      │       │
 │    └──────────┬──────────────────────┘       │
 │               │ fetch('/api/...')            │
 ├───────────────┼──────────────────────────────┤
-│     Render    │                              │
-│    .onrender  │                              │
-│   .com        ▼                              │
+│               │                              │
+│               │                              │
+│               ▼                              │
 │  ┌────────────────────────────────────┐      │
-│  │         FastAPI (uvicorn)           │      │
+│  │         FastAPI (uvicorn)          │      │
 │  │  ┌───────┐ ┌──────────┐ ┌───────┐  │      │
 │  │  │ Router│→│Evaluator │→│ DB    │  │      │
-│  │  │   +   │ │ (LiteLLM) │ │ (JSON│  │      │
-│  │  │ CORS  │ │ Sandbox   │ │ File) │  │      │
+│  │  │   +   │ │ (LiteLLM)│ │ (JSON │  │      │
+│  │  │ CORS  │ │ Sandbox  │ │ File) │  │      │
 │  │  └───────┘ └──────────┘ └───────┘  │      │
 │  └────────────────────────────────────┘      │
 │                        │                     │
@@ -96,13 +88,6 @@ llm-evals/
 ├── pyproject.toml      # Python deps managed by uv
 └── start_dashboard.sh  # Local one-command startup
 ```
-
----
-
-## 🌐 Live Demo
-
-> **Coming soon.** Once you deploy (see [DEPLOY.md](DEPLOY.md)), add your Render URL here.
-
 ---
 
 ## 🚀 Quick Start
@@ -129,18 +114,8 @@ dev server, and prints the URLs:
 | Dashboard | http://localhost:3000 |
 | API docs | http://localhost:8000/docs |
 
-### Or deploy to Render (free)
-
-See the full guide in [DEPLOY.md](DEPLOY.md). One URL, one service — the backend
-serves both the API and the React SPA from the same origin.
-
 ```bash
-# 1. Push to GitHub
 git push origin main
-
-# 2. Go to dashboard.render.com → New → Blueprint → Connect your repo
-# 3. Add API keys in Environment tab
-# 4. Open the .onrender.com URL
 ```
 
 ---
@@ -218,10 +193,7 @@ Column headers are matched case-insensitively. Accepted aliases:
 
 ## 📚 API Documentation
 
-When the backend is running, auto-generated Swagger docs are available at:
-
-- **Local**: http://localhost:8000/docs
-- **Render**: `https://your-app.onrender.com/docs`
+When the backend is running, auto-generated Swagger docs are available at: http://localhost:8000/docs
 
 Key endpoints:
 
@@ -246,24 +218,6 @@ Key endpoints:
 | Frontend | React 19, Vite, Recharts, Lucide React Icons |
 | Storage | File-based JSON (extensible to hosted DB) |
 | Package | uv (Python), npm (Node) |
-| Deploy | Render (single web service, free tier) |
-| CI | GitHub Actions (CodeQL) |
-
----
-
-## 🗺️ Roadmap
-
-- [x] Multi-provider evaluation (OpenRouter, Nvidia NIM, Sandbox)
-- [x] Arena / head-to-head comparison mode
-- [x] Hugging Face Hub dataset import
-- [x] LLM-as-a-Judge scoring (Correctness, Completeness, Clarity)
-- [x] Single-service Render deployment (DEPLOY.md)
-- [ ] Persistent database (Supabase / Neon)
-- [ ] Batch / scheduled evaluation runs
-- [ ] Docker compose for local single-command setup
-- [ ] Multi-user / team workspaces
-- [ ] Export results as PDF / CSV reports
-- [ ] Pre-built evaluation suites (GSM8K, MMLU, HumanEval)
 
 ---
 
