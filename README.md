@@ -286,7 +286,7 @@ Guidelines:
 
 ## 📄 License
 
-Copyright 2025 Debabrata Mishra
+Copyright 2026 Debabrata Mishra
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for
 the full text.
