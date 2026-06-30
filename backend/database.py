@@ -244,12 +244,17 @@ class Database:
         return None
 
     def save_arena_run(self, run: Dict[str, Any]) -> Dict[str, Any]:
-        if "id" not in run or not run["id"]:
-            run["id"] = f"arena_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
+        run_id = run.get("id")
+        if not isinstance(run_id, str) or not run_id:
+            run_id = f"arena_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
+        if not self._SAFE_ID_PATTERN.fullmatch(run_id):
+            raise ValueError("Invalid arena run id")
+        run["id"] = run_id
+
         if "created_at" not in run:
             run["created_at"] = datetime.utcnow().isoformat()
 
-        filepath = self._safe_json_path(ARENA_RUNS_DIR, run["id"])
+        filepath = self._safe_json_path(ARENA_RUNS_DIR, run_id)
         if not filepath:
             raise ValueError("Invalid arena run id")
         with open(filepath, "w") as f:
