@@ -15,6 +15,7 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
   // Manual creation state
   const [manualName, setManualName] = useState('');
   const [manualDesc, setManualDesc] = useState('');
+  const [datasetType, setDatasetType] = useState('single'); // 'single', 'multi'
   const [manualCases, setManualCases] = useState([{ question: '', ideal_answer: '' }]);
 
   // Hugging Face state
@@ -41,6 +42,7 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
   const resetManualForm = () => {
     setManualName('');
     setManualDesc('');
+    setDatasetType('single');
     setManualCases([{ question: '', ideal_answer: '' }]);
   };
 
@@ -100,8 +102,21 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
     }
   };
 
+  const handleDatasetTypeChange = (type) => {
+    setDatasetType(type);
+    if (type === 'single') {
+      setManualCases([{ question: '', ideal_answer: '' }]);
+    } else {
+      setManualCases([{ turns: [{ user_message: '', ideal_response: '' }] }]);
+    }
+  };
+
   const handleManualAddRow = () => {
-    setManualCases([...manualCases, { question: '', ideal_answer: '' }]);
+    if (datasetType === 'single') {
+      setManualCases([...manualCases, { question: '', ideal_answer: '' }]);
+    } else {
+      setManualCases([...manualCases, { turns: [{ user_message: '', ideal_response: '' }] }]);
+    }
   };
 
   const handleManualRemoveRow = (idx) => {
@@ -115,6 +130,25 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
     setManualCases(updated);
   };
 
+  const handleAddTurn = (caseIdx) => {
+    const updated = [...manualCases];
+    updated[caseIdx].turns.push({ user_message: '', ideal_response: '' });
+    setManualCases(updated);
+  };
+
+  const handleRemoveTurn = (caseIdx, turnIdx) => {
+    const updated = [...manualCases];
+    if (updated[caseIdx].turns.length === 1) return;
+    updated[caseIdx].turns = updated[caseIdx].turns.filter((_, i) => i !== turnIdx);
+    setManualCases(updated);
+  };
+
+  const handleTurnChange = (caseIdx, turnIdx, field, val) => {
+    const updated = [...manualCases];
+    updated[caseIdx].turns[turnIdx][field] = val;
+    setManualCases(updated);
+  };
+
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!manualName.trim()) {
@@ -122,10 +156,24 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
       return;
     }
 
-    const filteredCases = manualCases.filter(c => c.question.trim() && c.ideal_answer.trim());
-    if (filteredCases.length === 0) {
-      setToast({ type: 'error', message: 'Dataset must contain at least one valid Q&A case' });
-      return;
+    let filteredCases = [];
+    if (datasetType === 'single') {
+      filteredCases = manualCases.filter(c => c.question.trim() && c.ideal_answer.trim());
+      if (filteredCases.length === 0) {
+        setToast({ type: 'error', message: 'Dataset must contain at least one valid Q&A case' });
+        return;
+      }
+    } else {
+      // Validate multi-turn
+      filteredCases = manualCases.map(c => {
+        const validTurns = c.turns.filter(t => t.user_message.trim() && t.ideal_response.trim());
+        return { ...c, turns: validTurns };
+      }).filter(c => c.turns.length > 0);
+
+      if (filteredCases.length === 0) {
+        setToast({ type: 'error', message: 'Dataset must contain at least one valid multi-turn case with at least one turn' });
+        return;
+      }
     }
 
     try {
@@ -388,40 +436,147 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
                 </div>
               </div>
 
-              <h4 style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--text-secondary)' }}>Test Cases</h4>
-              
-              {manualCases.map((c, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: '12px', marginBottom: '16px', alignItems: 'flex-start' }} className="fade-in">
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '14px', width: '20px' }}>{idx + 1}</span>
-                  <div style={{ flex: 1 }}>
-                    <textarea 
-                      className="form-control form-textarea" 
-                      placeholder="Prompt / Question"
-                      value={c.question}
-                      onChange={(e) => handleManualCaseChange(idx, 'question', e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <textarea 
-                      className="form-control form-textarea" 
-                      placeholder="Ideal Golden Answer"
-                      value={c.ideal_answer}
-                      onChange={(e) => handleManualCaseChange(idx, 'ideal_answer', e.target.value)}
-                      required
-                    />
-                  </div>
+              <div className="form-group" style={{ marginBottom: '24px' }}>
+                <label className="form-label" style={{ fontWeight: 600 }}>Dataset Type</label>
+                <div style={{ display: 'flex', gap: '10px' }}>
                   <button 
                     type="button" 
-                    className="btn btn-secondary" 
-                    style={{ padding: '12px', marginTop: '4px' }}
-                    onClick={() => handleManualRemoveRow(idx)}
-                    disabled={manualCases.length === 1}
+                    className={`btn ${datasetType === 'single' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => handleDatasetTypeChange('single')}
+                    style={{ flex: 1, padding: '10px' }}
                   >
-                    <X size={16} />
+                    Single-Turn (Q&amp;A)
+                  </button>
+                  <button 
+                    type="button" 
+                    className={`btn ${datasetType === 'multi' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => handleDatasetTypeChange('multi')}
+                    style={{ flex: 1, padding: '10px' }}
+                  >
+                    Multi-Turn Conversation
                   </button>
                 </div>
-              ))}
+              </div>
+
+              <h4 style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--text-secondary)' }}>Test Cases</h4>
+              
+              {datasetType === 'single' ? (
+                manualCases.map((c, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '12px', marginBottom: '16px', alignItems: 'flex-start' }} className="fade-in">
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '14px', width: '20px' }}>{idx + 1}</span>
+                    <div style={{ flex: 1 }}>
+                      <textarea 
+                        className="form-control form-textarea" 
+                        placeholder="Prompt / Question"
+                        value={c.question}
+                        onChange={(e) => handleManualCaseChange(idx, 'question', e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <textarea 
+                        className="form-control form-textarea" 
+                        placeholder="Ideal Golden Answer"
+                        value={c.ideal_answer}
+                        onChange={(e) => handleManualCaseChange(idx, 'ideal_answer', e.target.value)}
+                        required
+                      />
+                    </div>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ padding: '12px', marginTop: '4px' }}
+                      onClick={() => handleManualRemoveRow(idx)}
+                      disabled={manualCases.length === 1}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                manualCases.map((c, caseIdx) => (
+                  <div key={caseIdx} style={{
+                    marginBottom: '24px', 
+                    padding: '20px', 
+                    backgroundColor: 'rgba(255,255,255,0.02)', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: 'var(--radius-md)'
+                  }} className="fade-in">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h5 style={{ fontWeight: 600, fontSize: '14px', margin: 0, color: 'var(--color-primary)' }}>
+                        CASE #{caseIdx + 1}
+                      </h5>
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary" 
+                        style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--color-danger)' }}
+                        onClick={() => handleManualRemoveRow(caseIdx)}
+                        disabled={manualCases.length === 1}
+                      >
+                        Remove Case
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {c.turns?.map((turn, turnIdx) => (
+                        <div key={turnIdx} style={{
+                          padding: '16px',
+                          backgroundColor: 'var(--bg-input)',
+                          borderRadius: 'var(--radius-sm)',
+                        }} className="fade-in">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                              Turn #{turnIdx + 1}
+                            </span>
+                            <button 
+                              type="button" 
+                              className="btn btn-secondary" 
+                              style={{ padding: '4px 8px', fontSize: '11px', color: 'var(--color-danger)' }}
+                              onClick={() => handleRemoveTurn(caseIdx, turnIdx)}
+                              disabled={c.turns.length === 1}
+                            >
+                              Remove Turn
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            <div style={{ flex: 1 }}>
+                              <label className="form-label" style={{ fontSize: '11px' }}>User Prompt</label>
+                              <textarea 
+                                className="form-control form-textarea" 
+                                placeholder="User Message"
+                                value={turn.user_message}
+                                onChange={(e) => handleTurnChange(caseIdx, turnIdx, 'user_message', e.target.value)}
+                                required
+                                style={{ height: '70px' }}
+                              />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <label className="form-label" style={{ fontSize: '11px' }}>Golden Response</label>
+                              <textarea 
+                                className="form-control form-textarea" 
+                                placeholder="Ideal Assistant Response"
+                                value={turn.ideal_response}
+                                onChange={(e) => handleTurnChange(caseIdx, turnIdx, 'ideal_response', e.target.value)}
+                                required
+                                style={{ height: '70px' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ marginTop: '14px', padding: '8px 14px', fontSize: '12px' }}
+                      onClick={() => handleAddTurn(caseIdx)}
+                    >
+                      <Plus size={14} /> Add Turn
+                    </button>
+                  </div>
+                ))
+              )}
 
               <button type="button" className="btn btn-secondary" style={{ marginTop: '12px' }} onClick={handleManualAddRow}>
                 <Plus size={16} /> Add Test Case
@@ -648,21 +803,47 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
             </div>
             
             <div style={{ overflowY: 'auto', flexGrow: 1, paddingRight: '6px' }}>
-              {viewCasesDataset.cases?.map((c, idx) => (
-                <div key={idx} style={{ marginBottom: '20px', padding: '16px', backgroundColor: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontWeight: 600, color: 'var(--color-primary)', fontSize: '13px', marginBottom: '6px' }}>
-                    CASE #{idx + 1} ({c.id})
+              {viewCasesDataset.cases?.map((c, idx) => {
+                const isMultiTurn = c.turns && c.turns.length > 0;
+                return (
+                  <div key={idx} style={{ marginBottom: '20px', padding: '16px', backgroundColor: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--color-primary)', fontSize: '13px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>CASE #{idx + 1} ({c.id})</span>
+                      <span className="badge badge-info" style={{ fontSize: '10px' }}>
+                        {isMultiTurn ? `${c.turns.length} Turns` : 'Single Turn'}
+                      </span>
+                    </div>
+                    {isMultiTurn ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {c.turns.map((turn, tIdx) => (
+                          <div key={tIdx} style={{ padding: '10px 14px', borderLeft: '3px solid var(--color-primary)', background: 'rgba(255,255,255,0.02)', borderRadius: '0 var(--radius-sm) var(--radius-sm) 0' }}>
+                            <div style={{ fontWeight: 600, fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>TURN {tIdx + 1}</div>
+                            <div style={{ marginBottom: '8px' }}>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600 }}>User: </span>
+                              <span style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{turn.user_message}</span>
+                            </div>
+                            <div>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600 }}>Ideal Response: </span>
+                              <span style={{ fontSize: '13px', whiteSpace: 'pre-wrap', color: 'var(--color-success)' }}>{turn.ideal_response}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600, marginBottom: '2px' }}>Question / Prompt:</div>
+                           <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap' }}>{c.question}</div>
+                         </div>
+                         <div>
+                           <div style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600, marginBottom: '2px' }}>Golden Answer:</div>
+                           <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap', borderLeft: '3px solid var(--color-success)', paddingLeft: '8px' }}>{c.ideal_answer}</div>
+                         </div>
+                      </>
+                    )}
                   </div>
-                  <div style={{ marginBottom: '10px' }}>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600, marginBottom: '2px' }}>Question / Prompt:</div>
-                    <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap' }}>{c.question}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600, marginBottom: '2px' }}>Golden Answer:</div>
-                    <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap', borderLeft: '3px solid var(--color-success)', paddingLeft: '8px' }}>{c.ideal_answer}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

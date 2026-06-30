@@ -1,12 +1,12 @@
 # LLM Evaluation Framework
 
-A full-stack framework for benchmarking and evaluating Large Language Models against golden Q&A datasets. Run evaluations against local or cloud-hosted models, score outputs with multiple metrics, and analyse results in an interactive dashboard.
+A full-stack framework for benchmarking and evaluating Large Language Models against evaluation datasets. Run evaluations against local or cloud-hosted models, score outputs with multiple metrics, and analyse results in an interactive dashboard.
 
 ---
 
 ## Features
 
-- **Multi-backend LLM support** via [LiteLLM](https://github.com/BerriAI/litellm): Ollama (local & cloud), OpenRouter — with per-run API key input or environment variables
+- **Multi-backend LLM support** via [LiteLLM](https://github.com/BerriAI/litellm): Nvidia NIM, OpenRouter — with per-run API key input or environment variables
 - **Dataset Manager**: import datasets from JSON, CSV, or Hugging Face Hub; create and edit cases manually
 - **Evaluation metrics**: Exact Match, Sequence Similarity, and LLM-as-a-Judge (Correctness, Completeness, Clarity scored 1–5)
 - **Cost & latency tracking**: per-case token counts, latency, and estimated USD cost
@@ -77,16 +77,15 @@ All model calls are routed through [LiteLLM](https://github.com/BerriAI/litellm)
 | Provider | Key required | Notes |
 |---|---|---|
 | **Sandbox** | No | Deterministic mock — no network access |
-| **Ollama — Local** | No | Requires `ollama serve` running locally |
-| **Ollama — Cloud** | Yes | Any OpenAI-compatible remote Ollama endpoint |
+| **Nvidia NIM** | Yes (optional) | Cloud hosted models or self-hosted NIM containers |
 | **OpenRouter** | Yes | Access to 200+ models via a single API key |
 
 API keys can be supplied in two ways — they are never persisted to disk:
 
 **Environment variables** (recommended for repeated use):
 ```bash
-export OLLAMA_API_KEY="..."        # Ollama cloud only
-export OLLAMA_BASE_URL="https://…" # Ollama cloud only
+export NVIDIA_NIM_API_KEY="..."    # Nvidia NIM cloud key
+export NVIDIA_NIM_API_BASE="https://…" # Nvidia NIM base URL (optional)
 export OPENROUTER_API_KEY="..."
 ```
 
@@ -132,4 +131,4 @@ Column headers are matched case-insensitively. Accepted aliases: `question` / `p
 | Latency | Per-case response time in seconds |
 | Cost | Estimated USD based on provider token pricing |
 
-The LLM judge cascades through available providers (OpenRouter → local Ollama) and falls back to heuristic scoring when no provider is reachable.
+The LLM judge cascades through available providers (OpenRouter → Nvidia NIM) and falls back to heuristic scoring when no provider is reachable.

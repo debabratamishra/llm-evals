@@ -39,7 +39,7 @@ export default function DashboardOverview({ runs, onViewRun }) {
       clarity: run.metrics.avg_clarity || 0,
       latency: run.metrics.avg_latency || 0,
       cost: run.metrics.total_cost || 0,
-      accuracy: run.metrics.avg_accuracy * 100 || 0,
+      accuracy: run.metrics.avg_similarity * 100 || 0,
       provider: run.model_provider,
       runId: run.id
     };
@@ -143,7 +143,7 @@ export default function DashboardOverview({ runs, onViewRun }) {
             {/* Scatter chart - Efficiency */}
             <div className="glass-card">
               <h3 style={{ marginBottom: '4px', fontSize: '16px', fontWeight: 600 }}>Benchmarking Efficiency Matrix</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '16px' }}>Accuracy (Exact Match %) vs Execution Latency (seconds)</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '16px' }}>Similarity Score (%) vs Execution Latency (seconds)</p>
               
               <div className="chart-container">
                 <ResponsiveContainer width="100%" height="100%">
@@ -152,8 +152,8 @@ export default function DashboardOverview({ runs, onViewRun }) {
                     <XAxis type="number" dataKey="latency" name="Latency" unit="s" stroke="var(--text-muted)" fontSize={11}>
                       <Label value="Avg Latency (s)" offset={-5} position="insideBottom" fill="var(--text-muted)" fontSize={11} />
                     </XAxis>
-                    <YAxis type="number" dataKey="accuracy" name="Accuracy" unit="%" stroke="var(--text-muted)" fontSize={11}>
-                      <Label value="Exact Match Rate (%)" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} fill="var(--text-muted)" fontSize={11} />
+                    <YAxis type="number" dataKey="accuracy" name="Similarity" unit="%" stroke="var(--text-muted)" fontSize={11}>
+                      <Label value="Similarity Score (%)" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} fill="var(--text-muted)" fontSize={11} />
                     </YAxis>
                     <ZAxis type="number" dataKey="correctness" range={[60, 400]} />
                     <Tooltip 

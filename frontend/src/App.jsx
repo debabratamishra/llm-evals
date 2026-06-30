@@ -13,9 +13,9 @@ export default function App() {
   const [datasets, setDatasets] = useState([]);
   const [runs, setRuns] = useState([]);
   const [apiKeysSet, setApiKeysSet] = useState({
-    ollama_api_key_set: false,
-    ollama_base_url_set: false,
-    ollama_base_url: 'http://localhost:11434',
+    nvidia_nim_api_key_set: false,
+    nvidia_nim_base_url_set: false,
+    nvidia_nim_base_url: 'https://integrate.api.nvidia.com/v1',
     openrouter_api_key_set: false,
   });
   

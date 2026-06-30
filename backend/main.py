@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import json
+from urllib.parse import urlparse
 
 from database import Database
 from evaluator import EvaluationRunner
@@ -27,18 +28,31 @@ db = Database()
 class ModelConfig(BaseModel):
     run_name: str = Field(..., example="Llama 3.2 on Reasoning Benchmark")
     dataset_id: str = Field(..., example="logical_reasoning_benchmark")
-    model_provider: str = Field(..., example="openrouter")  # mock | ollama | ollama_cloud | openrouter
+    model_provider: str = Field(..., example="openrouter")  # mock | nvidia_nim | openrouter
     model_name: str = Field(..., example="meta-llama/llama-3.1-8b-instruct:free")
     temperature: float = Field(0.2, ge=0.0, le=2.0)
     system_prompt: Optional[str] = ""
+    # Exposing more parameters
+    max_tokens: Optional[int] = Field(None, ge=1)
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
+    frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+    presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+    # Multi-turn history evaluation mode (model_response or ideal_response)
+    multi_turn_history_mode: str = Field("model_response", example="model_response")
     # Per-provider credentials (fall back to env vars when omitted)
-    ollama_api_key: Optional[str] = None       # only needed for ollama_cloud
-    ollama_base_url: Optional[str] = None      # ollama local (default localhost:11434) or cloud endpoint
+    nvidia_nim_api_key: Optional[str] = None
+    nvidia_nim_base_url: Optional[str] = None
     openrouter_api_key: Optional[str] = None
 
+class ManualTurn(BaseModel):
+    user_message: str
+    ideal_response: str
+
 class ManualCase(BaseModel):
-    question: str
-    ideal_answer: str
+    id: Optional[str] = None
+    question: Optional[str] = None
+    ideal_answer: Optional[str] = None
+    turns: Optional[List[ManualTurn]] = None
 
 class DatasetCreate(BaseModel):
     name: str
@@ -60,11 +74,10 @@ class HFImportRequest(BaseModel):
 async def check_keys():
     """Checks which API keys are pre-configured as environment variables."""
     return {
-        "ollama_api_key_set": bool(os.environ.get("OLLAMA_API_KEY")),
-        "ollama_base_url_set": bool(os.environ.get("OLLAMA_BASE_URL")),
+        "nvidia_nim_api_key_set": bool(os.environ.get("NVIDIA_NIM_API_KEY") or os.environ.get("NVIDIA_API_KEY")),
+        "nvidia_nim_base_url_set": bool(os.environ.get("NVIDIA_NIM_API_BASE") or os.environ.get("NVIDIA_API_BASE")),
         "openrouter_api_key_set": bool(os.environ.get("OPENROUTER_API_KEY")),
-        # Surface the configured Ollama base URL so the frontend can pre-fill it
-        "ollama_base_url": os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+        "nvidia_nim_base_url": os.environ.get("NVIDIA_NIM_API_BASE") or os.environ.get("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1"),
     }
 
 # Dataset endpoints
@@ -232,10 +245,24 @@ async def create_dataset(payload: DatasetCreate):
     if not payload.cases:
         raise HTTPException(status_code=400, detail="Dataset must contain at least one case")
         
+    cases = []
+    for i, c in enumerate(payload.cases):
+        if c.turns:
+            cases.append({
+                "id": c.id or f"case-{i+1}",
+                "turns": [{"user_message": t.user_message, "ideal_response": t.ideal_response} for t in c.turns]
+            })
+        else:
+            cases.append({
+                "id": c.id or f"case-{i+1}",
+                "question": c.question,
+                "ideal_answer": c.ideal_answer
+            })
+            
     dataset = {
         "name": payload.name,
         "description": payload.description,
-        "cases": [{"id": f"case-{i+1}", "question": c.question, "ideal_answer": c.ideal_answer} for i, c in enumerate(payload.cases)]
+        "cases": cases
     }
     return db.save_dataset(dataset)
 
@@ -260,15 +287,26 @@ async def upload_dataset(
                 raise ValueError("JSON must be a list of Q&A cases or an object containing a 'cases' list.")
             
             for i, item in enumerate(raw_cases):
+                turns = item.get("turns")
                 q = item.get("question") or item.get("prompt")
                 a = item.get("ideal_answer") or item.get("reference") or item.get("answer")
-                if not q or not a:
-                    raise ValueError(f"Case {i+1} is missing 'question' or 'ideal_answer'")
-                cases.append({
-                    "id": item.get("id", f"case-{i+1}"),
-                    "question": q,
-                    "ideal_answer": a
-                })
+                if not turns and (not q or not a):
+                    raise ValueError(f"Case {i+1} is missing 'question' or 'ideal_answer' or 'turns'")
+                
+                if turns:
+                    for t_idx, turn in enumerate(turns):
+                        if "user_message" not in turn or "ideal_response" not in turn:
+                            raise ValueError(f"Case {i+1} Turn {t_idx+1} is missing 'user_message' or 'ideal_response'")
+                    cases.append({
+                        "id": item.get("id", f"case-{i+1}"),
+                        "turns": [{"user_message": t["user_message"], "ideal_response": t["ideal_response"]} for t in turns]
+                    })
+                else:
+                    cases.append({
+                        "id": item.get("id", f"case-{i+1}"),
+                        "question": q,
+                        "ideal_answer": a
+                    })
                 
         elif filename.endswith(".csv"):
             decoded = contents.decode("utf-8")
@@ -346,21 +384,22 @@ async def execute_run(config: ModelConfig):
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     # Resolve keys: prefer request payload, fall back to env vars
-    ollama_key        = config.ollama_api_key        or os.environ.get("OLLAMA_API_KEY")
-    ollama_base_url   = config.ollama_base_url       or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-    openrouter_key    = config.openrouter_api_key    or os.environ.get("OPENROUTER_API_KEY")
+    nvidia_nim_key       = config.nvidia_nim_api_key or os.environ.get("NVIDIA_NIM_API_KEY") or os.environ.get("NVIDIA_API_KEY")
+    nvidia_nim_base_url  = config.nvidia_nim_base_url or os.environ.get("NVIDIA_NIM_API_BASE") or os.environ.get("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1")
+    openrouter_key       = config.openrouter_api_key    or os.environ.get("OPENROUTER_API_KEY")
 
     # Provider-specific validation
-    if config.model_provider == "ollama_cloud" and not ollama_key:
-        raise HTTPException(status_code=400, detail="An API key is required for cloud-hosted Ollama. Set OLLAMA_API_KEY or provide it in the request.")
-    if config.model_provider == "ollama_cloud" and ollama_base_url == "http://localhost:11434":
-        raise HTTPException(status_code=400, detail="A custom cloud base URL is required for ollama_cloud. The local default URL cannot be used.")
+    if config.model_provider == "nvidia_nim":
+        parsed_base_url = urlparse(nvidia_nim_base_url)
+        is_default_base = parsed_base_url.hostname == "integrate.api.nvidia.com"
+        if is_default_base and not nvidia_nim_key:
+            raise HTTPException(status_code=400, detail="Nvidia NIM API key is required when using the default cloud host. Set NVIDIA_NIM_API_KEY or provide it in the request.")
     if config.model_provider == "openrouter" and not openrouter_key:
         raise HTTPException(status_code=400, detail="OpenRouter API key is required. Set OPENROUTER_API_KEY or provide it in the request.")
 
     runner = EvaluationRunner(
-        ollama_api_key=ollama_key,
-        ollama_base_url=ollama_base_url,
+        nvidia_nim_api_key=nvidia_nim_key,
+        nvidia_nim_base_url=nvidia_nim_base_url,
         openrouter_api_key=openrouter_key,
     )
 
