@@ -17,7 +17,7 @@ services:
       cd ..
       echo "==> Syncing Python dependencies"
       $HOME/.local/bin/uv sync --frozen
-    startCommand: $HOME/.local/bin/uv run python backend/main.py
+    startCommand: bash -c 'export PATH="$HOME/.local/bin:$PATH" && uv run python backend/main.py'
     healthCheckPath: /api/check-keys
     autoDeploy: true
     envVars:
