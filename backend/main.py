@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import json
+from urllib.parse import urlparse
 
 from database import Database
 from evaluator import EvaluationRunner
@@ -389,7 +390,8 @@ async def execute_run(config: ModelConfig):
 
     # Provider-specific validation
     if config.model_provider == "nvidia_nim":
-        is_default_base = "integrate.api.nvidia.com" in nvidia_nim_base_url
+        parsed_base_url = urlparse(nvidia_nim_base_url)
+        is_default_base = parsed_base_url.hostname == "integrate.api.nvidia.com"
         if is_default_base and not nvidia_nim_key:
             raise HTTPException(status_code=400, detail="Nvidia NIM API key is required when using the default cloud host. Set NVIDIA_NIM_API_KEY or provide it in the request.")
     if config.model_provider == "openrouter" and not openrouter_key:
