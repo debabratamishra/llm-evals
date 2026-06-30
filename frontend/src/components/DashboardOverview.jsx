@@ -1,8 +1,10 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, ZAxis, Label } from 'recharts';
-import { Award, Zap, DollarSign, Database, Activity, TrendingUp } from 'lucide-react';
+import { Award, Zap, DollarSign, Database, Activity, TrendingUp, Swords, Trophy } from 'lucide-react';
 
-export default function DashboardOverview({ runs, onViewRun }) {
+const CONTESTANT_COLORS = ['#00f2fe', '#bf55ec', '#10b981', '#f59e0b', '#ef4444'];
+
+export default function DashboardOverview({ runs, arenaRuns = [], onViewRun, onViewArenaRun }) {
   // Aggregate data
   const totalRuns = runs.length;
   const uniqueModels = new Set(runs.map(r => `${r.model_provider}/${r.model_name}`)).size;
@@ -58,7 +60,7 @@ export default function DashboardOverview({ runs, onViewRun }) {
   return (
     <div className="fade-in">
       {/* Metrics Row */}
-      <div className="card-grid-4">
+      <div className="card-grid-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         <div className="glass-card accented">
           <div className="card-header">
             <span className="card-title">Total Runs</span>
@@ -68,6 +70,17 @@ export default function DashboardOverview({ runs, onViewRun }) {
           </div>
           <div className="card-value">{totalRuns}</div>
           <div className="card-desc">Completed evaluations</div>
+        </div>
+
+        <div className="glass-card accented">
+          <div className="card-header">
+            <span className="card-title">Arena Runs</span>
+            <div className="card-icon-wrapper">
+              <Swords size={18} />
+            </div>
+          </div>
+          <div className="card-value">{arenaRuns.length}</div>
+          <div className="card-desc">Head-to-head comparisons</div>
         </div>
 
         <div className="glass-card accented">
@@ -229,6 +242,56 @@ export default function DashboardOverview({ runs, onViewRun }) {
               </table>
             </div>
           </div>
+
+          {/* Arena section */}
+          {arenaRuns.length > 0 && (
+            <div className="glass-card" style={{ marginTop: '8px' }}>
+              <h3 style={{ marginBottom: '4px', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Swords size={18} style={{ color: 'var(--color-primary)' }} /> Recent Arena Battles
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '16px' }}>Latest head-to-head model comparisons</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {arenaRuns.slice(0, 5).map((run) => {
+                  const top = run.leaderboard?.[0];
+                  const contestants = run.contestants || [];
+                  return (
+                    <div key={run.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'border-color 0.15s' }}
+                      onClick={() => onViewArenaRun(run.id)}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(0,242,254,0.3)'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                    >
+                      <div style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>{run.name}</div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {contestants.map((c, idx) => {
+                            const lb = run.leaderboard?.find(l => l.label === c.label);
+                            return (
+                              <span key={c.label} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: CONTESTANT_COLORS[idx % CONTESTANT_COLORS.length], flexShrink: 0 }} />
+                                {c.label}{lb ? ` (${lb.wins}W)` : ''}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {top && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                          <Trophy size={14} style={{ color: 'var(--color-warning)' }} />
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-warning)' }}>{top.label}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{(top.win_rate * 100).toFixed(0)}% win rate</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {arenaRuns.length > 5 && (
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '12px', textAlign: 'center' }}>
+                  +{arenaRuns.length - 5} more — view all in <strong>Arena History</strong>
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

@@ -8,12 +8,14 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DATASETS_DIR = os.path.join(DATA_DIR, "datasets")
 RUNS_DIR = os.path.join(DATA_DIR, "runs")
+ARENA_RUNS_DIR = os.path.join(DATA_DIR, "arena_runs")
 
 class Database:
     def __init__(self):
         # Create directories if they don't exist
         os.makedirs(DATASETS_DIR, exist_ok=True)
         os.makedirs(RUNS_DIR, exist_ok=True)
+        os.makedirs(ARENA_RUNS_DIR, exist_ok=True)
         self.initialize_default_datasets()
 
     def initialize_default_datasets(self):
@@ -184,6 +186,50 @@ class Database:
 
     def delete_run(self, run_id: str) -> bool:
         filepath = os.path.join(RUNS_DIR, f"{run_id}.json")
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            return True
+        return False
+
+    # Arena Run Methods
+    def get_arena_runs(self) -> List[Dict[str, Any]]:
+        """Returns summary list of arena runs (results array excluded for performance)."""
+        runs = []
+        for filename in os.listdir(ARENA_RUNS_DIR):
+            if filename.endswith(".json"):
+                filepath = os.path.join(ARENA_RUNS_DIR, filename)
+                try:
+                    with open(filepath, "r") as f:
+                        data = json.load(f)
+                        summary = {k: v for k, v in data.items() if k != "results"}
+                        runs.append(summary)
+                except Exception as e:
+                    print(f"Error loading arena run {filename}: {e}")
+        return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
+
+    def get_arena_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        filepath = os.path.join(ARENA_RUNS_DIR, f"{run_id}.json")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error reading arena run {run_id}: {e}")
+        return None
+
+    def save_arena_run(self, run: Dict[str, Any]) -> Dict[str, Any]:
+        if "id" not in run or not run["id"]:
+            run["id"] = f"arena_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
+        if "created_at" not in run:
+            run["created_at"] = datetime.utcnow().isoformat()
+
+        filepath = os.path.join(ARENA_RUNS_DIR, f"{run['id']}.json")
+        with open(filepath, "w") as f:
+            json.dump(run, f, indent=2)
+        return run
+
+    def delete_arena_run(self, run_id: str) -> bool:
+        filepath = os.path.join(ARENA_RUNS_DIR, f"{run_id}.json")
         if os.path.exists(filepath):
             os.remove(filepath)
             return True

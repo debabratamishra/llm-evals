@@ -9,7 +9,7 @@ import json
 from urllib.parse import urlparse
 
 from database import Database
-from evaluator import EvaluationRunner
+from evaluator import EvaluationRunner, ArenaRunner
 
 app = FastAPI(title="LLM Evaluation Starter Framework API")
 
@@ -26,10 +26,10 @@ db = Database()
 
 # Pydantic schemas
 class ModelConfig(BaseModel):
-    run_name: str = Field(..., example="Llama 3.2 on Reasoning Benchmark")
-    dataset_id: str = Field(..., example="logical_reasoning_benchmark")
-    model_provider: str = Field(..., example="openrouter")  # mock | nvidia_nim | openrouter
-    model_name: str = Field(..., example="meta-llama/llama-3.1-8b-instruct:free")
+    run_name: str = Field(..., json_schema_extra={"example": "Llama 3.2 on Reasoning Benchmark"})
+    dataset_id: str = Field(..., json_schema_extra={"example": "logical_reasoning_benchmark"})
+    model_provider: str = Field(..., json_schema_extra={"example": "openrouter"})  # mock | nvidia_nim | openrouter
+    model_name: str = Field(..., json_schema_extra={"example": "meta-llama/llama-3.1-8b-instruct:free"})
     temperature: float = Field(0.2, ge=0.0, le=2.0)
     system_prompt: Optional[str] = ""
     # Exposing more parameters
@@ -38,7 +38,7 @@ class ModelConfig(BaseModel):
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     # Multi-turn history evaluation mode (model_response or ideal_response)
-    multi_turn_history_mode: str = Field("model_response", example="model_response")
+    multi_turn_history_mode: str = Field("model_response", json_schema_extra={"example": "model_response"})
     # Per-provider credentials (fall back to env vars when omitted)
     nvidia_nim_api_key: Optional[str] = None
     nvidia_nim_base_url: Optional[str] = None
@@ -58,6 +58,27 @@ class DatasetCreate(BaseModel):
     name: str
     description: Optional[str] = ""
     cases: List[ManualCase]
+
+class ContestantConfig(BaseModel):
+    label: Optional[str] = None           # display name; falls back to model_name
+    model_provider: str = Field(..., json_schema_extra={"example": "openrouter"})
+    model_name: str = Field(..., json_schema_extra={"example": "meta-llama/llama-3.1-8b-instruct:free"})
+    temperature: float = Field(0.2, ge=0.0, le=2.0)
+    system_prompt: Optional[str] = ""
+    max_tokens: Optional[int] = Field(None, ge=1)
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
+    frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+    presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+    multi_turn_history_mode: str = Field("model_response")
+
+class ArenaConfig(BaseModel):
+    run_name: str = Field(..., json_schema_extra={"example": "Llama 3.1 8B vs Mistral 7B Arena"})
+    dataset_id: str = Field(..., json_schema_extra={"example": "logical_reasoning_benchmark"})
+    contestants: List[ContestantConfig] = Field(..., min_length=2)
+    # Shared credentials (fall back to env vars when omitted)
+    nvidia_nim_api_key: Optional[str] = None
+    nvidia_nim_base_url: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
 
 class HFImportRequest(BaseModel):
     path: str
@@ -416,6 +437,86 @@ async def delete_run(run_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Run not found")
     return {"status": "success", "message": "Evaluation run deleted successfully"}
+
+
+# ---------------------------------------------------------------------------
+# Arena endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/arena-runs")
+async def list_arena_runs():
+    """Returns summary list of all saved arena runs (no per-case results)."""
+    return db.get_arena_runs()
+
+
+@app.get("/api/arena-runs/{run_id}")
+async def get_arena_run(run_id: str):
+    run = db.get_arena_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Arena run not found")
+    return run
+
+
+@app.post("/api/arena-runs")
+async def execute_arena_run(config: ArenaConfig):
+    dataset = db.get_dataset(config.dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    # Resolve shared credentials
+    nvidia_nim_key      = config.nvidia_nim_api_key  or os.environ.get("NVIDIA_NIM_API_KEY") or os.environ.get("NVIDIA_API_KEY")
+    nvidia_nim_base_url = config.nvidia_nim_base_url or os.environ.get("NVIDIA_NIM_API_BASE") or os.environ.get("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1")
+    openrouter_key      = config.openrouter_api_key  or os.environ.get("OPENROUTER_API_KEY")
+
+    # Provider-specific validation across all contestants
+    for c in config.contestants:
+        if c.model_provider == "nvidia_nim":
+            is_default_base = "integrate.api.nvidia.com" in (nvidia_nim_base_url or "")
+            if is_default_base and not nvidia_nim_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Nvidia NIM API key is required for contestant '{c.label or c.model_name}'. Set NVIDIA_NIM_API_KEY or provide it in the request."
+                )
+        if c.model_provider == "openrouter" and not openrouter_key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"OpenRouter API key is required for contestant '{c.label or c.model_name}'. Set OPENROUTER_API_KEY or provide it in the request."
+            )
+
+    runner = ArenaRunner(
+        nvidia_nim_api_key=nvidia_nim_key,
+        nvidia_nim_base_url=nvidia_nim_base_url,
+        openrouter_api_key=openrouter_key,
+    )
+
+    # Merge label defaults and build config dict
+    contestants_dicts = []
+    for c in config.contestants:
+        d = c.dict()
+        if not d.get("label"):
+            d["label"] = d["model_name"]
+        contestants_dicts.append(d)
+
+    arena_cfg = {
+        "run_name": config.run_name,
+        "dataset_id": config.dataset_id,
+        "contestants": contestants_dicts,
+    }
+
+    try:
+        run_data = runner.run_arena(dataset, arena_cfg)
+        saved = db.save_arena_run(run_data)
+        return saved
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Arena evaluation failed: {str(e)}")
+
+
+@app.delete("/api/arena-runs/{run_id}")
+async def delete_arena_run(run_id: str):
+    success = db.delete_arena_run(run_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Arena run not found")
+    return {"status": "success", "message": "Arena run deleted successfully"}
 
 if __name__ == "__main__":
     import uvicorn
