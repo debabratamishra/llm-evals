@@ -21,20 +21,28 @@ class EvaluationRunner:
 
     Provider routing:
       - "mock"         → deterministic sandbox, no keys needed
-      - "ollama"       → Ollama local via LiteLLM   (no key, configurable base_url)
-      - "ollama_cloud" → Ollama cloud via LiteLLM   (env/param: OLLAMA_API_KEY + custom base_url)
+      - "nvidia_nim"   → Nvidia NIM via LiteLLM     (env/param: NVIDIA_NIM_API_KEY + optional base_url)
       - "openrouter"   → OpenRouter via LiteLLM     (env/param: OPENROUTER_API_KEY, free model choice)
     """
 
     def __init__(
         self,
-        ollama_api_key: Optional[str] = None,
-        ollama_base_url: Optional[str] = None,
+        nvidia_nim_api_key: Optional[str] = None,
+        nvidia_nim_base_url: Optional[str] = None,
         openrouter_api_key: Optional[str] = None,
     ):
-        # Ollama (local defaults to http://localhost:11434, cloud needs key + custom URL)
-        self.ollama_api_key = ollama_api_key or os.environ.get("OLLAMA_API_KEY")
-        self.ollama_base_url = ollama_base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        # Nvidia NIM
+        self.nvidia_nim_api_key = (
+            nvidia_nim_api_key 
+            or os.environ.get("NVIDIA_NIM_API_KEY") 
+            or os.environ.get("NVIDIA_API_KEY")
+        )
+        self.nvidia_nim_base_url = (
+            nvidia_nim_base_url 
+            or os.environ.get("NVIDIA_NIM_API_BASE") 
+            or os.environ.get("NVIDIA_API_BASE") 
+            or "https://integrate.api.nvidia.com/v1"
+        )
         # OpenRouter
         self.openrouter_api_key = openrouter_api_key or os.environ.get("OPENROUTER_API_KEY")
 
@@ -45,9 +53,12 @@ class EvaluationRunner:
     def _call_litellm(
         self,
         litellm_model: str,
-        prompt: str,
-        system_prompt: Optional[str] = None,
+        messages: List[Dict[str, str]],
         temperature: float = 0.2,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         extra_headers: Optional[Dict[str, str]] = None,
@@ -56,16 +67,20 @@ class EvaluationRunner:
         if not HAS_LITELLM:
             raise RuntimeError("litellm is not installed. Run: pip install litellm")
 
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
         kwargs: Dict[str, Any] = {
             "model": litellm_model,
             "messages": messages,
             "temperature": temperature,
         }
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if top_p is not None:
+            kwargs["top_p"] = top_p
+        if frequency_penalty is not None:
+            kwargs["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            kwargs["presence_penalty"] = presence_penalty
+            
         if api_key:
             kwargs["api_key"] = api_key
         if api_base:
@@ -85,7 +100,8 @@ class EvaluationRunner:
 
             # Estimate when the provider doesn't return usage
             if input_tokens == 0:
-                input_tokens = int(len(prompt.split()) * 1.3)
+                prompt_text = " ".join([m.get("content", "") for m in messages])
+                input_tokens = int(len(prompt_text.split()) * 1.3)
             if output_tokens == 0:
                 output_tokens = int(len(text.split()) * 1.3)
 
@@ -109,62 +125,45 @@ class EvaluationRunner:
     # Provider-specific callers (thin wrappers over _call_litellm)
     # ------------------------------------------------------------------
 
-    def _call_ollama(
+    def _call_nvidia_nim(
         self,
         model_name: str,
-        prompt: str,
-        system_prompt: Optional[str] = None,
+        messages: List[Dict[str, str]],
         temperature: float = 0.2,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
-        Calls a local Ollama instance via LiteLLM.
-        Expects ollama_base_url to point at http://localhost:11434 (default).
+        Calls Nvidia NIM via LiteLLM.
+        Requires nvidia_nim_api_key and optional nvidia_nim_base_url.
         """
-        # LiteLLM requires "ollama/<model>" prefix for local
-        litellm_model = model_name if model_name.startswith("ollama/") else f"ollama/{model_name}"
-        return self._call_litellm(
-            litellm_model=litellm_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            api_base=self.ollama_base_url,
+        # LiteLLM requires "nvidia_nim/<model>" prefix
+        litellm_model = (
+            model_name if model_name.startswith("nvidia_nim/") else f"nvidia_nim/{model_name}"
         )
-
-    def _call_ollama_cloud(
-        self,
-        model_name: str,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: float = 0.2,
-    ) -> Dict[str, Any]:
-        """
-        Calls a cloud-hosted Ollama-compatible endpoint via LiteLLM.
-        Requires ollama_api_key and a custom ollama_base_url.
-        """
-        if not self.ollama_api_key:
-            raise ValueError("Ollama cloud API key is not configured.")
-        if not self.ollama_base_url or self.ollama_base_url == "http://localhost:11434":
-            raise ValueError(
-                "A custom Ollama cloud base URL is required. "
-                "Local default URL is not valid for cloud provider."
-            )
-        # Use openai-compatible prefix so LiteLLM routes via the custom base
-        litellm_model = model_name if model_name.startswith("openai/") else f"openai/{model_name}"
         return self._call_litellm(
             litellm_model=litellm_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
+            messages=messages,
             temperature=temperature,
-            api_key=self.ollama_api_key,
-            api_base=self.ollama_base_url,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            api_key=self.nvidia_nim_api_key,
+            api_base=self.nvidia_nim_base_url,
         )
 
     def _call_openrouter(
         self,
         model_name: str,
-        prompt: str,
-        system_prompt: Optional[str] = None,
+        messages: List[Dict[str, str]],
         temperature: float = 0.2,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Calls OpenRouter via LiteLLM."""
         if not self.openrouter_api_key:
@@ -175,9 +174,12 @@ class EvaluationRunner:
         )
         return self._call_litellm(
             litellm_model=litellm_model,
-            prompt=prompt,
-            system_prompt=system_prompt,
+            messages=messages,
             temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
             api_key=self.openrouter_api_key,
             extra_headers={
                 "HTTP-Referer": "https://github.com/llm-evals",
@@ -248,20 +250,43 @@ class EvaluationRunner:
     ) -> Dict[str, Any]:
         """
         Rates the candidate answer on correctness, completeness, and clarity.
-        Tries available providers in order: Gemini → OpenAI → OpenRouter → Ollama → heuristic.
+        Tries available providers in order: OpenRouter → Nvidia NIM → rubric heuristics.
         """
         judge_prompt = f"""You are an expert AI evaluator grading the output of a language model.
 Given a user query, a golden reference answer, and the candidate model's answer, rate the candidate answer on three dimensions:
-1. Correctness (1-5): Factual correctness. Does it align with the facts in the golden answer? (1 = completely wrong, 5 = perfectly correct)
-2. Completeness (1-5): How comprehensive is the response? Does it cover all points mentioned in the golden answer? (1 = covers nothing, 5 = covers all points)
-3. Clarity (1-5): Is the answer clear, coherent, and professional? (1 = unreadable/gibberish, 5 = exceptionally clear)
+1. Correctness (1-5): Factual correctness compared to the golden answer.
+2. Completeness (1-5): Comprehensiveness of content coverage compared to the golden answer.
+3. Clarity (1-5): Formatting, coherence, and professional layout.
+
+Strictly adhere to the following scoring rubrics for each score level:
+
+### CORRECTNESS RUBRIC:
+- 5 (Perfect): No factual errors, contradictions, or misleading claims compared to the golden answer.
+- 4 (Minor Errors): The response is correct overall but contains minor inaccuracies, minor over-generalizations, or trivial omissions that do not compromise correctness.
+- 3 (Moderate Errors): Contains some correct elements but also significant factual errors or claims that contradict the golden answer.
+- 2 (Major Errors): Mostly incorrect. Only minor factual points align with the golden answer.
+- 1 (Completely Incorrect): The response is entirely wrong, contains severe hallucinations, or is completely irrelevant to the question.
+
+### COMPLETENESS RUBRIC:
+- 5 (Perfect): Covers all key ideas, constraints, examples, and details specified in the golden answer.
+- 4 (Minor Gaps): Covers all primary points but misses one or two minor/secondary details.
+- 3 (Moderate Gaps): Covers about half of the major details in the golden answer; significant sections of the expected content are omitted.
+- 2 (Major Gaps): Omit almost all necessary content; only a single correct detail is mentioned.
+- 1 (Completely Incomplete): Fails to address any core parts of the reference answer.
+
+### CLARITY RUBRIC:
+- 5 (Perfect): Exceptionally clear, well-structured (e.g., bullet points/code blocks when relevant), highly professional tone, and excellent flow.
+- 4 (Good): Easy to read and understand, with minor grammatical, flow, or formatting imperfections.
+- 3 (Fair): Mostly readable but suffering from minor flow issues, repetitive structure, or slightly disorganized formatting.
+- 2 (Poor): Disorganized, hard to read, or uses confusing sentence structures.
+- 1 (Unreadable): Complete gibberish, unstructured text wall, or chaotic phrasing.
 
 Provide your output ONLY as a valid JSON object matching this schema:
 {{
   "correctness": integer,
   "completeness": integer,
   "clarity": integer,
-  "reason": "brief explanation of the grading"
+  "reason": "detailed explanation of why this score was given, citing specific rubric matches"
 }}
 
 ---
@@ -292,7 +317,9 @@ JSON Response:"""
             try:
                 res = _parse_judge(
                     self._call_openrouter(
-                        "meta-llama/llama-3.1-8b-instruct:free", judge_prompt, temperature=0.1
+                        "meta-llama/llama-3.2-3b-instruct", 
+                        [{"role": "user", "content": judge_prompt}], 
+                        temperature=0.1
                     )["text"]
                 )
                 if res:
@@ -300,15 +327,20 @@ JSON Response:"""
             except Exception as e:
                 print(f"OpenRouter Judge failed: {e}")
 
-        # 2. Try local Ollama
-        try:
-            res = _parse_judge(
-                self._call_ollama("llama3.2", judge_prompt, temperature=0.1)["text"]
-            )
-            if res:
-                return res
-        except Exception as e:
-            print(f"Ollama Judge failed: {e}")
+        # 2. Try Nvidia NIM
+        if self.nvidia_nim_api_key:
+            try:
+                res = _parse_judge(
+                    self._call_nvidia_nim(
+                        "meta/llama-3.2-3b-instruct", 
+                        [{"role": "user", "content": judge_prompt}], 
+                        temperature=0.1
+                    )["text"]
+                )
+                if res:
+                    return res
+            except Exception as e:
+                print(f"Nvidia NIM Judge failed: {e}")
 
         # 5. Heuristic fallback
         sim = self._get_similarity_score(model_answer, ideal_answer)
@@ -316,18 +348,18 @@ JSON Response:"""
 
         if exact == 1:
             return {"correctness": 5, "completeness": 5, "clarity": 5,
-                    "reason": "Exact match detected. Fully correct and complete."}
+                    "reason": "Heuristic Judge (Rubric Match: 5/5/5): Exact match detected. Fully correct, complete, and clear."}
         if sim > 0.8:
             return {"correctness": 5, "completeness": 5, "clarity": 5,
-                    "reason": "Heuristic Judge: Extremely high overlap with golden answer."}
+                    "reason": "Heuristic Judge (Rubric Match: 5/5/5): Extremely high overlap with golden answer."}
         if sim > 0.6:
             return {"correctness": 4, "completeness": 4, "clarity": 5,
-                    "reason": "Heuristic Judge: High semantic similarity. Captures primary concepts."}
+                    "reason": "Heuristic Judge (Rubric Match: 4/4/5): High semantic similarity. Captures primary concepts with minor gaps."}
         if sim > 0.4:
             return {"correctness": 3, "completeness": 3, "clarity": 4,
-                    "reason": "Heuristic Judge: Moderate similarity. Some key details missing."}
+                    "reason": "Heuristic Judge (Rubric Match: 3/3/4): Moderate similarity. Significant details from reference answer are missing."}
         return {"correctness": 2, "completeness": 2, "clarity": 3,
-                "reason": "Heuristic Judge: Low similarity. Response diverges from reference answer."}
+                "reason": "Heuristic Judge (Rubric Match: 2/2/3): Low similarity. Response diverges significantly from golden answer."}
 
     # ------------------------------------------------------------------
     # Cost estimation
@@ -341,9 +373,8 @@ JSON Response:"""
         m = model_name.lower()
 
         pricing: Dict[str, Any] = {
-            # Ollama (local) is free; cloud instances vary — use $0 as default
-            "ollama": {"default": {"input": 0.0, "output": 0.0}},
-            "ollama_cloud": {"default": {"input": 0.0, "output": 0.0}},
+            # Nvidia NIM cost estimation (default to 0.0)
+            "nvidia_nim": {"default": {"input": 0.0, "output": 0.0}},
             # OpenRouter pricing varies widely; use conservative estimates per model
             "openrouter": {
                 "default": {"input": 0.50, "output": 1.50},
@@ -374,18 +405,23 @@ JSON Response:"""
     # ------------------------------------------------------------------
 
     def run_evaluation(self, dataset: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-        """Runs the full evaluation pipeline over a golden Q&A dataset."""
+        """Runs the full evaluation pipeline over a golden dataset."""
         model_provider = config.get("model_provider", "mock")
         model_name = config.get("model_name", "mock-model")
         temperature = config.get("temperature", 0.2)
         system_prompt = config.get("system_prompt", "")
+        max_tokens = config.get("max_tokens")
+        top_p = config.get("top_p")
+        frequency_penalty = config.get("frequency_penalty")
+        presence_penalty = config.get("presence_penalty")
+        multi_turn_history_mode = config.get("multi_turn_history_mode", "model_response")
 
         cases = dataset.get("cases", [])
         results = []
 
         total_latency = 0.0
         total_cost = 0.0
-        total_exact = 0
+        total_exact = 0.0
         sum_correctness = 0.0
         sum_completeness = 0.0
         sum_clarity = 0.0
@@ -393,61 +429,193 @@ JSON Response:"""
         total_cases = len(cases)
 
         for i, case in enumerate(cases):
-            question = case["question"]
-            ideal_answer = case["ideal_answer"]
-            case_id = case.get("id", str(i))
+            turns = case.get("turns")
+            is_case_multi_turn = turns is not None and len(turns) > 0
 
-            # -- Step 1: call the target model --
-            if model_provider == "ollama":
-                model_res = self._call_ollama(model_name, question, system_prompt, temperature)
-            elif model_provider == "ollama_cloud":
-                model_res = self._call_ollama_cloud(model_name, question, system_prompt, temperature)
-            elif model_provider == "openrouter":
-                model_res = self._call_openrouter(model_name, question, system_prompt, temperature)
+            if is_case_multi_turn:
+                case_results = []
+                actual_responses_history = []
+                
+                case_latency = 0.0
+                case_cost = 0.0
+                case_exact = 0
+                case_similarity = 0.0
+                case_correctness = 0.0
+                case_completeness = 0.0
+                case_clarity = 0.0
+                
+                for t_idx, turn in enumerate(turns):
+                    user_msg = turn["user_message"]
+                    ideal_resp = turn["ideal_response"]
+                    
+                    # Construct messages history up to this turn
+                    messages = []
+                    if system_prompt:
+                        messages.append({"role": "system", "content": system_prompt})
+                    for prev_t in range(t_idx):
+                        messages.append({"role": "user", "content": turns[prev_t]["user_message"]})
+                        
+                        # Decide what to append based on the history mode selection
+                        history_resp = (
+                            actual_responses_history[prev_t]
+                            if multi_turn_history_mode == "model_response"
+                            else turns[prev_t]["ideal_response"]
+                        )
+                        messages.append({"role": "assistant", "content": history_resp})
+                    messages.append({"role": "user", "content": user_msg})
+                    
+                    # Call target model
+                    if model_provider == "nvidia_nim":
+                        model_res = self._call_nvidia_nim(
+                            model_name, messages, temperature, max_tokens, top_p, frequency_penalty, presence_penalty
+                        )
+                    elif model_provider == "openrouter":
+                        model_res = self._call_openrouter(
+                            model_name, messages, temperature, max_tokens, top_p, frequency_penalty, presence_penalty
+                        )
+                    else:
+                        model_res = self._call_mock(model_name, user_msg, ideal_resp)
+                        
+                    model_answer = model_res["text"]
+                    latency = model_res["latency"]
+                    input_tokens = model_res["input_tokens"]
+                    output_tokens = model_res["output_tokens"]
+                    
+                    actual_responses_history.append(model_answer)
+                    
+                    # Metrics
+                    exact_match = self._get_exact_match(model_answer, ideal_resp)
+                    similarity = self._get_similarity_score(model_answer, ideal_resp)
+                    judge_res = self._run_llm_as_judge(user_msg, ideal_resp, model_answer)
+                    cost = self._calculate_costs(model_provider, model_name, input_tokens, output_tokens)
+                    
+                    # Accumulate case totals
+                    case_latency += latency
+                    case_cost += cost
+                    case_exact += exact_match
+                    case_similarity += similarity
+                    case_correctness += judge_res["correctness"]
+                    case_completeness += judge_res["completeness"]
+                    case_clarity += judge_res["clarity"]
+                    
+                    case_results.append({
+                        "turn_index": t_idx,
+                        "user_message": user_msg,
+                        "ideal_response": ideal_resp,
+                        "model_response": model_answer,
+                        "metrics": {
+                            "exact_match": exact_match,
+                            "similarity": similarity,
+                            "llm_correctness": judge_res["correctness"],
+                            "llm_completeness": judge_res["completeness"],
+                            "llm_clarity": judge_res["clarity"],
+                            "latency": round(latency, 2),
+                            "cost": cost,
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "reason": judge_res["reason"],
+                        }
+                    })
+                
+                # Turn averages for the case
+                num_turns = len(turns)
+                case_metrics = {
+                    "exact_match": round(case_exact / num_turns, 2),
+                    "similarity": round(case_similarity / num_turns, 2),
+                    "llm_correctness": round(case_correctness / num_turns, 2),
+                    "llm_completeness": round(case_completeness / num_turns, 2),
+                    "llm_clarity": round(case_clarity / num_turns, 2),
+                    "latency": round(case_latency, 2),
+                    "cost": round(case_cost, 6),
+                    "input_tokens": sum(t["metrics"]["input_tokens"] for t in case_results),
+                    "output_tokens": sum(t["metrics"]["output_tokens"] for t in case_results),
+                    "reason": f"Aggregated scores over {num_turns} conversational turns."
+                }
+                
+                results.append({
+                    "case_id": case.get("id", f"case-{i}"),
+                    "is_multi_turn": True,
+                    "turns": case_results,
+                    # Fallback single-turn fields for basic displays
+                    "question": turns[0]["user_message"],
+                    "ideal_answer": turns[0]["ideal_response"],
+                    "model_answer": case_results[0]["model_response"],
+                    "metrics": case_metrics
+                })
+                
+                # Accumulate overall run totals
+                total_latency += case_latency
+                total_cost += case_cost
+                total_exact += case_exact / num_turns
+                sum_correctness += case_correctness / num_turns
+                sum_completeness += case_completeness / num_turns
+                sum_clarity += case_clarity / num_turns
+                sum_similarity += case_similarity / num_turns
+
             else:
-                model_res = self._call_mock(model_name, question, ideal_answer)
+                # SINGLE-TURN
+                question = case["question"]
+                ideal_answer = case["ideal_answer"]
+                case_id = case.get("id", str(i))
 
-            model_answer = model_res["text"]
-            latency = model_res["latency"]
-            input_tokens = model_res["input_tokens"]
-            output_tokens = model_res["output_tokens"]
+                messages = []
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({"role": "user", "content": question})
 
-            # -- Step 2: standard metrics --
-            exact_match = self._get_exact_match(model_answer, ideal_answer)
-            similarity = self._get_similarity_score(model_answer, ideal_answer)
+                # -- Step 1: call the target model --
+                if model_provider == "nvidia_nim":
+                    model_res = self._call_nvidia_nim(
+                        model_name, messages, temperature, max_tokens, top_p, frequency_penalty, presence_penalty
+                    )
+                elif model_provider == "openrouter":
+                    model_res = self._call_openrouter(
+                        model_name, messages, temperature, max_tokens, top_p, frequency_penalty, presence_penalty
+                    )
+                else:
+                    model_res = self._call_mock(model_name, question, ideal_answer)
 
-            # -- Step 3: LLM-as-a-judge --
-            judge_res = self._run_llm_as_judge(question, ideal_answer, model_answer)
+                model_answer = model_res["text"]
+                latency = model_res["latency"]
+                input_tokens = model_res["input_tokens"]
+                output_tokens = model_res["output_tokens"]
 
-            # -- Step 4: cost --
-            cost = self._calculate_costs(model_provider, model_name, input_tokens, output_tokens)
+                # -- Step 2: standard metrics --
+                exact_match = self._get_exact_match(model_answer, ideal_answer)
+                similarity = self._get_similarity_score(model_answer, ideal_answer)
 
-            total_latency += latency
-            total_cost += cost
-            total_exact += exact_match
-            sum_correctness += judge_res["correctness"]
-            sum_completeness += judge_res["completeness"]
-            sum_clarity += judge_res["clarity"]
-            sum_similarity += similarity
+                # -- Step 3: LLM-as-a-judge --
+                judge_res = self._run_llm_as_judge(question, ideal_answer, model_answer)
 
-            results.append({
-                "case_id": case_id,
-                "question": question,
-                "ideal_answer": ideal_answer,
-                "model_answer": model_answer,
-                "metrics": {
-                    "exact_match": exact_match,
-                    "similarity": similarity,
-                    "llm_correctness": judge_res["correctness"],
-                    "llm_completeness": judge_res["completeness"],
-                    "llm_clarity": judge_res["clarity"],
-                    "latency": round(latency, 2),
-                    "cost": cost,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "reason": judge_res["reason"],
-                },
-            })
+                # -- Step 4: cost --
+                cost = self._calculate_costs(model_provider, model_name, input_tokens, output_tokens)
+
+                total_latency += latency
+                total_cost += cost
+                total_exact += exact_match
+                sum_correctness += judge_res["correctness"]
+                sum_completeness += judge_res["completeness"]
+                sum_clarity += judge_res["clarity"]
+                sum_similarity += similarity
+
+                results.append({
+                    "case_id": case_id,
+                    "question": question,
+                    "ideal_answer": ideal_answer,
+                    "model_answer": model_answer,
+                    "metrics": {
+                        "exact_match": exact_match,
+                        "similarity": similarity,
+                        "llm_correctness": judge_res["correctness"],
+                        "llm_completeness": judge_res["completeness"],
+                        "llm_clarity": judge_res["clarity"],
+                        "latency": round(latency, 2),
+                        "cost": cost,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "reason": judge_res["reason"],
+                    },
+                })
 
         n = total_cases or 1  # avoid division by zero
         return {
@@ -459,8 +627,13 @@ JSON Response:"""
             "parameters": {
                 "temperature": temperature,
                 "system_prompt": system_prompt,
+                "max_tokens": max_tokens,
+                "top_p": top_p,
+                "frequency_penalty": frequency_penalty,
+                "presence_penalty": presence_penalty,
+                "multi_turn_history_mode": multi_turn_history_mode,
             },
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now().astimezone().isoformat(),
             "metrics": {
                 "avg_accuracy": round(total_exact / n, 3),
                 "avg_similarity": round(sum_similarity / n, 2),

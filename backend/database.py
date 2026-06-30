@@ -17,12 +17,12 @@ class Database:
         self.initialize_default_datasets()
 
     def initialize_default_datasets(self):
-        """Seed the system with some high-quality logical reasoning datasets if empty."""
+        """Seed the system with some high-quality datasets if empty/missing."""
         default_files = os.listdir(DATASETS_DIR)
-        has_logic = any(f.endswith(".json") and "logical_reasoning" in f for f in default_files)
         
+        # 1. Logical Reasoning & Puzzles Benchmark
+        has_logic = any(f.endswith(".json") and "logical_reasoning" in f for f in default_files)
         if not has_logic:
-            # Create a professional logical reasoning and puzzle benchmark dataset
             logical_dataset = {
                 "id": "logical_reasoning_benchmark",
                 "name": "Logical Reasoning & Puzzles Benchmark",
@@ -56,8 +56,54 @@ class Database:
                     }
                 ]
             }
-
             self.save_dataset(logical_dataset)
+
+        # 2. Multi-Turn Conversational Benchmark
+        has_multiturn = any(f.endswith(".json") and "multi_turn" in f for f in default_files)
+        if not has_multiturn:
+            multiturn_dataset = {
+                "id": "multi_turn_conversational_benchmark",
+                "name": "Multi-Turn Conversational Benchmark",
+                "description": "A curated dataset for evaluating multi-turn chat capabilities, context retention, and instruction following across multiple turns.",
+                "created_at": datetime.utcnow().isoformat(),
+                "cases": [
+                    {
+                        "id": "conv-01",
+                        "turns": [
+                            {
+                                "user_message": "I am planning a 3-day trip to Paris. Can you suggest a brief daily itinerary?",
+                                "ideal_response": "Here is a brief 3-day Paris itinerary:\n- Day 1: Visit the Eiffel Tower in the morning, walk along the Seine River, and explore the Louvre Museum in the afternoon.\n- Day 2: Visit Notre-Dame Cathedral, stroll through the Latin Quarter, and enjoy a scenic evening Seine river cruise.\n- Day 3: Explore the artistic streets of Montmartre, visit the Sacré-Cœur Basilica, and spend the afternoon at the Palace of Versailles."
+                            },
+                            {
+                                "user_message": "That sounds great! For Day 1, can you recommend a good lunch spot near the Louvre?",
+                                "ideal_response": "Certainly! Near the Louvre, you can try:\n1. Café Marly: Located right under the arcades of the Louvre, offering stunning views of the glass pyramid.\n2. Bistrot Victoires: A short walk away, famous for its classic French bistro atmosphere and affordable, delicious steak frites."
+                            },
+                            {
+                                "user_message": "How far is the second restaurant from the Louvre by foot?",
+                                "ideal_response": "Bistrot Victoires is located at 6 Rue de la Vrillière. It is approximately a 7 to 10-minute walk (about 600 meters) from the Louvre Museum's main pyramid entrance."
+                            }
+                        ]
+                    },
+                    {
+                        "id": "conv-02",
+                        "turns": [
+                            {
+                                "user_message": "I have a Python list of numbers: `[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]`. I want to filter out the odd numbers and keep only the even ones. How do I do this using a list comprehension?",
+                                "ideal_response": "You can filter the even numbers using this list comprehension:\n```python\nnumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nevens = [x for x in numbers if x % 2 == 0]\nprint(evens)  # Output: [2, 4, 6, 8, 10]\n```"
+                            },
+                            {
+                                "user_message": "Can you rewrite that using the `filter()` function instead?",
+                                "ideal_response": "Yes! Here is the same operation using the `filter()` function combined with a `lambda` expression:\n```python\nnumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nevens = list(filter(lambda x: x % 2 == 0, numbers))\nprint(evens)  # Output: [2, 4, 6, 8, 10]\n```"
+                            },
+                            {
+                                "user_message": "Which of these two approaches is generally considered more Pythonic and faster?",
+                                "ideal_response": "The list comprehension `[x for x in numbers if x % 2 == 0]` is generally considered more Pythonic and is faster.\n\nWhy it's faster:\n- List comprehensions run at near-C speed inside the interpreter.\n- `filter` with a `lambda` requires a Python function call for every single item in the list, which adds substantial overhead.\n\nWhy it's more Pythonic:\n- List comprehensions are highly readable and the preferred way to filter/map in modern Python."
+                            }
+                        ]
+                    }
+                ]
+            }
+            self.save_dataset(multiturn_dataset)
 
     # Dataset Methods
     def get_datasets(self) -> List[Dict[str, Any]]:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Settings, AlertTriangle, Key, ShieldCheck, Loader2, Server, Globe, ExternalLink } from 'lucide-react';
+import { Play, Settings, AlertTriangle, Key, ShieldCheck, Loader2, Server, ExternalLink } from 'lucide-react';
 
 
 export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, setToast }) {
@@ -9,14 +9,21 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
   const [modelName,         setModelName]         = useState('llama-3.2-3b-mock');
   const [temperature,       setTemperature]       = useState(0.2);
   const [systemPrompt,      setSystemPrompt]      = useState('');
+  
+  // Advanced parameters
+  const [showAdvanced,           setShowAdvanced]           = useState(false);
+  const [maxTokens,              setMaxTokens]              = useState('');
+  const [topP,                   setTopP]                   = useState('');
+  const [frequencyPenalty,       setFrequencyPenalty]       = useState('');
+  const [presencePenalty,        setPresencePenalty]        = useState('');
+  const [historyMode,            setHistoryMode]            = useState('model_response');
 
   // ── per-provider credential/config inputs ──
-  const [ollamaBaseUrlInput,    setOllamaBaseUrlInput]    = useState('http://localhost:11434');
-  const [ollamaCloudUrlInput,   setOllamaCloudUrlInput]   = useState('');
-  const [ollamaCloudKeyInput,   setOllamaCloudKeyInput]   = useState('');
+  const [nvidiaNimBaseUrlInput, setNvidiaNimBaseUrlInput] = useState('https://integrate.api.nvidia.com/v1');
+  const [nvidiaNimKeyInput,     setNvidiaNimKeyInput]     = useState('');
   const [openrouterKeyInput,    setOpenrouterKeyInput]    = useState('');
   const [openrouterCustomModel, setOpenrouterCustomModel] = useState('');
-  const [ollamaModelInput,      setOllamaModelInput]      = useState('llama3.2');
+  const [nvidiaNimModelInput,   setNvidiaNimModelInput]   = useState('meta/llama-3.1-8b-instruct');
 
   const [isRunning,   setIsRunning]   = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
@@ -31,13 +38,12 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
     'Aggregating benchmark results…',
   ];
 
-  // Pre-fill Ollama base URL from env-detected value
+  // Pre-fill Nvidia NIM base URL from env-detected value
   useEffect(() => {
-    if (apiKeysSet.ollama_base_url && apiKeysSet.ollama_base_url !== 'http://localhost:11434') {
-      setOllamaBaseUrlInput(apiKeysSet.ollama_base_url);
-      setOllamaCloudUrlInput(apiKeysSet.ollama_base_url);
+    if (apiKeysSet.nvidia_nim_base_url && apiKeysSet.nvidia_nim_base_url !== 'https://integrate.api.nvidia.com/v1') {
+      setNvidiaNimBaseUrlInput(apiKeysSet.nvidia_nim_base_url);
     }
-  }, [apiKeysSet.ollama_base_url]);
+  }, [apiKeysSet.nvidia_nim_base_url]);
 
   useEffect(() => {
     if (datasets.length > 0 && !selectedDatasetId) setSelectedDatasetId(datasets[0].id);
@@ -50,11 +56,11 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
     const dsName = ds ? ds.name : 'Dataset';
     setRunName(`${getEffectiveModelName()} on ${dsName}`);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDatasetId, provider, modelName, openrouterCustomModel, ollamaModelInput, datasets]);
+  }, [selectedDatasetId, provider, modelName, openrouterCustomModel, nvidiaNimModelInput, datasets]);
 
   // Reset model defaults when provider changes
   useEffect(() => {
-    if (provider === 'ollama' || provider === 'ollama_cloud') setModelName(ollamaModelInput);
+    if (provider === 'nvidia_nim') setModelName(nvidiaNimModelInput);
     else if (provider === 'openrouter') setModelName(getOpenRouterModel());
     else setModelName('llama-3.2-3b-mock');
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,7 +82,7 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
 
   function getEffectiveModelName() {
     if (provider === 'openrouter') return getOpenRouterModel();
-    if (provider === 'ollama' || provider === 'ollama_cloud') return ollamaModelInput;
+    if (provider === 'nvidia_nim') return nvidiaNimModelInput;
     return modelName;
   }
 
@@ -91,8 +97,8 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
       setToast({ type: 'error', message: 'Please select or enter an OpenRouter model ID.' });
       return;
     }
-    if ((provider === 'ollama' || provider === 'ollama_cloud') && !ollamaModelInput.trim()) {
-      setToast({ type: 'error', message: 'Please enter an Ollama model name.' });
+    if (provider === 'nvidia_nim' && !nvidiaNimModelInput.trim()) {
+      setToast({ type: 'error', message: 'Please enter an Nvidia NIM model name.' });
       return;
     }
 
@@ -106,10 +112,14 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
         model_name:         effectiveModel,
         temperature:        parseFloat(temperature),
         system_prompt:      systemPrompt,
-        ollama_base_url:    provider === 'ollama'       ? (ollamaBaseUrlInput  || null)
-                          : provider === 'ollama_cloud' ? (ollamaCloudUrlInput || null) : null,
-        ollama_api_key:     provider === 'ollama_cloud' ? (ollamaCloudKeyInput || null) : null,
-        openrouter_api_key: provider === 'openrouter'   ? (openrouterKeyInput  || null) : null,
+        max_tokens:              maxTokens !== '' ? parseInt(maxTokens) : null,
+        top_p:                   topP !== '' ? parseFloat(topP) : null,
+        frequency_penalty:       frequencyPenalty !== '' ? parseFloat(frequencyPenalty) : null,
+        presence_penalty:        presencePenalty !== '' ? parseFloat(presencePenalty) : null,
+        multi_turn_history_mode: historyMode,
+        nvidia_nim_base_url: provider === 'nvidia_nim' ? (nvidiaNimBaseUrlInput || null) : null,
+        nvidia_nim_api_key:  provider === 'nvidia_nim' ? (nvidiaNimKeyInput     || null) : null,
+        openrouter_api_key:  provider === 'openrouter' ? (openrouterKeyInput    || null) : null,
       };
 
       const res = await fetch('/api/runs', {
@@ -134,11 +144,12 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
   };
 
   // Gate the submit button
-  const isOllamaCloudReady = provider !== 'ollama_cloud'
-    || (!!ollamaCloudUrlInput && (apiKeysSet.ollama_api_key_set || !!ollamaCloudKeyInput));
+  const isNvidiaNimReady = provider !== 'nvidia_nim'
+    || (nvidiaNimBaseUrlInput !== 'https://integrate.api.nvidia.com/v1')
+    || (apiKeysSet.nvidia_nim_api_key_set || !!nvidiaNimKeyInput);
   const isOpenrouterReady  = provider !== 'openrouter'
     || apiKeysSet.openrouter_api_key_set || !!openrouterKeyInput;
-  const canSubmit = isOllamaCloudReady && isOpenrouterReady;
+  const canSubmit = isNvidiaNimReady && isOpenrouterReady;
 
   // ── Reusable input boxes ─────────────────────────────────────────────
 
@@ -166,14 +177,9 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
 
   const credentialRows = [
     {
-      label:  'Ollama Local',
-      detail: 'No key required · uses base URL',
-      ready:  true,
-    },
-    {
-      label:  'Ollama Cloud',
-      detail: apiKeysSet.ollama_api_key_set ? 'Loaded via OLLAMA_API_KEY env' : 'Requires key + URL',
-      ready:  apiKeysSet.ollama_api_key_set || !!ollamaCloudKeyInput,
+      label:  'Nvidia NIM',
+      detail: apiKeysSet.nvidia_nim_api_key_set ? 'Loaded via NVIDIA_NIM_API_KEY env' : 'Requires key for cloud',
+      ready:  apiKeysSet.nvidia_nim_api_key_set || !!nvidiaNimKeyInput || (!!nvidiaNimBaseUrlInput && nvidiaNimBaseUrlInput !== 'https://integrate.api.nvidia.com/v1'),
     },
     {
       label:  'OpenRouter',
@@ -232,8 +238,7 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
                   <label className="form-label">Model Provider</label>
                   <select className="form-select" value={provider} onChange={e => setProvider(e.target.value)}>
                     <option value="mock">Sandbox Evaluator (No Keys Required)</option>
-                    <option value="ollama">Ollama - Local</option>
-                    <option value="ollama_cloud">Ollama - Cloud</option>
+                    <option value="nvidia_nim">Nvidia NIM</option>
                     <option value="openrouter">OpenRouter</option>
                   </select>
                 </div>
@@ -244,13 +249,13 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
                 <div className="form-group">
                   <label className="form-label">Target Model</label>
 
-                  {(provider === 'ollama' || provider === 'ollama_cloud') && (
+                  {provider === 'nvidia_nim' && (
                     <input
                       type="text"
                       className="form-control"
-                      placeholder="e.g. llama3.2, mistral, phi4"
-                      value={ollamaModelInput}
-                      onChange={e => setOllamaModelInput(e.target.value)}
+                      placeholder="e.g. meta/llama-3.2-3b-instruct"
+                      value={nvidiaNimModelInput}
+                      onChange={e => setNvidiaNimModelInput(e.target.value)}
                       required
                     />
                   )}
@@ -260,7 +265,7 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="e.g. meta-llama/llama-3.1-8b-instruct:free"
+                        placeholder="e.g. meta-llama/llama-3.2-3b-instruct"
                         value={openrouterCustomModel}
                         onChange={e => setOpenrouterCustomModel(e.target.value)}
                         required
@@ -300,34 +305,170 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
                   value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} />
               </div>
 
-              {/* ── Provider-specific credential / config inputs ── */}
+              {/* Advanced Parameters Toggle */}
+              <div style={{ marginBottom: '20px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', padding: '8px 12px' }}
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  <Settings size={14} /> 
+                  {showAdvanced ? 'Hide Advanced Parameters' : 'Show Advanced Parameters'}
+                </button>
+              </div>
 
-              {provider === 'ollama' && (
-                <UrlInputBox
-                  label="Ollama Base URL"
-                  placeholder="http://localhost:11434"
-                  value={ollamaBaseUrlInput}
-                  onChange={setOllamaBaseUrlInput}
-                  note="Point this at your local Ollama instance. Default: http://localhost:11434"
-                />
+              {showAdvanced && (
+                <div className="fade-in" style={{
+                  padding: '20px',
+                  background: 'rgba(255,255,255,0.01)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px'
+                }}>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Max Tokens (Optional)</label>
+                      <input 
+                        type="number" 
+                        className="form-control" 
+                        placeholder="e.g. 1024 (leave empty for default)"
+                        value={maxTokens} 
+                        onChange={e => setMaxTokens(e.target.value)} 
+                        min="1"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Top P: {topP !== '' ? topP : 'Default'}</label>
+                      <input 
+                        type="range" 
+                        min="0.0" 
+                        max="1.0" 
+                        step="0.05" 
+                        className="form-control"
+                        style={{ height: '38px', padding: '0 8px' }}
+                        value={topP === '' ? '1.0' : topP} 
+                        onChange={e => setTopP(e.target.value)}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn-link" 
+                        style={{ fontSize: '11px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '4px', textAlign: 'left' }}
+                        onClick={() => setTopP('')}
+                      >
+                        Reset to default
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Frequency Penalty: {frequencyPenalty !== '' ? frequencyPenalty : 'Default'}</label>
+                      <input 
+                        type="range" 
+                        min="-2.0" 
+                        max="2.0" 
+                        step="0.1" 
+                        className="form-control"
+                        style={{ height: '38px', padding: '0 8px' }}
+                        value={frequencyPenalty === '' ? '0.0' : frequencyPenalty} 
+                        onChange={e => setFrequencyPenalty(e.target.value)}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn-link" 
+                        style={{ fontSize: '11px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '4px', textAlign: 'left' }}
+                        onClick={() => setFrequencyPenalty('')}
+                      >
+                        Reset to default
+                      </button>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Presence Penalty: {presencePenalty !== '' ? presencePenalty : 'Default'}</label>
+                      <input 
+                        type="range" 
+                        min="-2.0" 
+                        max="2.0" 
+                        step="0.1" 
+                        className="form-control"
+                        style={{ height: '38px', padding: '0 8px' }}
+                        value={presencePenalty === '' ? '0.0' : presencePenalty} 
+                        onChange={e => setPresencePenalty(e.target.value)}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn-link" 
+                        style={{ fontSize: '11px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '4px', textAlign: 'left' }}
+                        onClick={() => setPresencePenalty('')}
+                      >
+                        Reset to default
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Multi-turn history mode */}
+                  <div className="form-group">
+                    <label className="form-label" style={{ marginBottom: '8px' }}>
+                      Multi-Turn History Mode
+                    </label>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: '1.5' }}>
+                      Controls what is injected as the assistant turn in multi-turn conversation history.
+                    </p>
+                    <div style={{ display: 'flex', gap: '0', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)', width: 'fit-content' }}>
+                      {[
+                        { value: 'model_response', label: 'Model Response', desc: 'Use actual model output (realistic)' },
+                        { value: 'ideal_response', label: 'Ideal Response', desc: 'Use golden answer (teacher forcing)' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          title={opt.desc}
+                          onClick={() => setHistoryMode(opt.value)}
+                          style={{
+                            padding: '8px 16px',
+                            fontSize: '12px',
+                            fontWeight: historyMode === opt.value ? 600 : 400,
+                            background: historyMode === opt.value ? 'var(--color-primary)' : 'transparent',
+                            color: historyMode === opt.value ? '#fff' : 'var(--text-secondary)',
+                            border: 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                      {historyMode === 'model_response'
+                        ? '⚡ Realistic: model errors in earlier turns cascade into later turns, measuring true chat robustness.'
+                        : '📐 Teacher Forcing: each turn is evaluated against ideal context, isolating per-turn capability.'}
+                    </p>
+                  </div>
+                </div>
               )}
 
-              {provider === 'ollama_cloud' && (
+              {/* ── Provider-specific credential / config inputs ── */}
+
+              {provider === 'nvidia_nim' && (
                 <>
                   <UrlInputBox
-                    label="Ollama Cloud Base URL"
-                    placeholder="https://your-ollama-cloud-host.example.com"
-                    value={ollamaCloudUrlInput}
-                    onChange={setOllamaCloudUrlInput}
-                    note="The base URL of your cloud-hosted Ollama-compatible endpoint."
+                    label="Nvidia NIM Base URL"
+                    placeholder="https://integrate.api.nvidia.com/v1"
+                    value={nvidiaNimBaseUrlInput}
+                    onChange={setNvidiaNimBaseUrlInput}
+                    note="Default: https://integrate.api.nvidia.com/v1. Override if self-hosting NIM."
                   />
-                  {!apiKeysSet.ollama_api_key_set && (
+                  {!apiKeysSet.nvidia_nim_api_key_set && (nvidiaNimBaseUrlInput === 'https://integrate.api.nvidia.com/v1') && (
                     <KeyInputBox
-                      label="Ollama Cloud API Key"
-                      placeholder="Enter your cloud Ollama API key (not saved on server)"
-                      value={ollamaCloudKeyInput}
-                      onChange={setOllamaCloudKeyInput}
-                      note="No OLLAMA_API_KEY env variable detected. Key is used only for this request."
+                      label="Nvidia NIM API Key"
+                      placeholder="Enter your NVIDIA_NIM_API_KEY (not saved on server)"
+                      value={nvidiaNimKeyInput}
+                      onChange={setNvidiaNimKeyInput}
+                      note="No NVIDIA_NIM_API_KEY env variable detected. Key is used only for this request."
                     />
                   )}
                 </>
@@ -385,20 +526,12 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
           <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
 
           {/* Provider info blurb */}
-          {provider === 'ollama' && (
+          {provider === 'nvidia_nim' && (
             <div className="fade-in" style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
               <p style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, marginBottom: '6px' }}>
-                <Server size={13} /> Ollama Local
+                <Server size={13} /> Nvidia NIM
               </p>
-              Runs fully offline. Make sure <code>ollama serve</code> is running and the model is pulled locally (<code>ollama pull {ollamaModelInput}</code>).
-            </div>
-          )}
-          {provider === 'ollama_cloud' && (
-            <div className="fade-in" style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              <p style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, marginBottom: '6px' }}>
-                <Globe size={13} /> Ollama Cloud
-              </p>
-              Points at any OpenAI-compatible cloud endpoint running Ollama — e.g. a self-hosted VM, RunPod, or similar. Requires a base URL and usually an API key.
+              Access models hosted on NVIDIA's cloud NIM, or configure a self-hosted NIM container. Default base URL: <code>https://integrate.api.nvidia.com/v1</code>.
             </div>
           )}
           {provider === 'openrouter' && (
