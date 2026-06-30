@@ -4,9 +4,12 @@ import io
 import logging
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional, Literal
 import json
+from pathlib import Path
 from urllib.parse import urlparse
 
 from database import Database
@@ -630,6 +633,46 @@ async def delete_arena_run(run_id: str):
         raise HTTPException(status_code=404, detail="Arena run not found")
     return {"status": "success", "message": "Arena run deleted successfully"}
 
+
+# ---------------------------------------------------------------------------
+# Static frontend (single-origin deployment on Render)
+# ---------------------------------------------------------------------------
+# When the React SPA build lives at ../frontend/dist (created by `npm run build`
+# in the parent directory), we serve it from the same FastAPI origin so that
+# fetch('/api/...') calls work without CORS or build-time URL injection.
+#
+# The mount is ordered AFTER every /api/* route above so the API takes
+# priority. A catch-all route serves index.html for client-side deep-links.
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+if _FRONTEND_DIST.is_dir():
+    assets_dir = _FRONTEND_DIST / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(str(_FRONTEND_DIST / "index.html"))
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Don't shadow real backend routes; this only fires when the API layer
+        # above did not match. Serve the file if it exists, else fall back to
+        # index.html so React Router (if added later) can handle deep-links.
+        candidate = _FRONTEND_DIST / full_path
+        if candidate.is_file():
+            return FileResponse(str(candidate))
+        return FileResponse(str(_FRONTEND_DIST / "index.html"))
+else:
+    logger.info(
+        "Frontend dist not found at %s — running as API-only service. "
+        "Run `npm run build` inside frontend/ to enable the dashboard.",
+        _FRONTEND_DIST,
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Render injects the PORT env var; default to 8000 for local dev.
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

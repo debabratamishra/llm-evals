@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: llm-evals
+    runtime: python
+    plan: free
+    # Render sets PORT automatically; we read from env in backend/main.py.
+    # Bind to 0.0.0.0:$PORT (uvicorn does this when --host 0.0.0.0 is passed).
+    buildCommand: |
+      set -e
+      echo "==> Installing uv"
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      export PATH="$HOME/.local/bin:$PATH"
+      echo "==> Building frontend"
+      cd frontend
+      npm ci
+      npm run build
+      cd ..
+      echo "==> Syncing Python dependencies"
+      $HOME/.local/bin/uv sync --frozen
+    startCommand: $HOME/.local/bin/uv run python backend/main.py
+    healthCheckPath: /api/check-keys
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # CORS is a no-op when frontend + backend share an origin, but leaving
+      # the default keeps local dev (localhost:3000 -> :8000) working too.
+      - key: CORS_ALLOWED_ORIGINS
+        value: "http://localhost:3000,http://localhost:5173"
+      # LLM provider keys — set these in the Render dashboard, NOT in this file.
+      # - NVIDIA_NIM_API_KEY
+      # - NVIDIA_NIM_API_BASE
+      # - OPENROUTER_API_KEY
