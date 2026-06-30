@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -11,6 +12,8 @@ RUNS_DIR = os.path.join(DATA_DIR, "runs")
 ARENA_RUNS_DIR = os.path.join(DATA_DIR, "arena_runs")
 
 class Database:
+    _SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+
     def __init__(self):
         # Create directories if they don't exist
         os.makedirs(DATASETS_DIR, exist_ok=True)
@@ -19,6 +22,11 @@ class Database:
         self.initialize_default_datasets()
 
     def _safe_json_path(self, base_dir: str, resource_id: str) -> Optional[str]:
+        if not isinstance(resource_id, str) or not resource_id:
+            return None
+        if not self._SAFE_ID_PATTERN.fullmatch(resource_id):
+            return None
+
         filename = f"{resource_id}.json"
         base_abs = os.path.abspath(base_dir)
         candidate_abs = os.path.abspath(os.path.join(base_abs, filename))
