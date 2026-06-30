@@ -471,7 +471,13 @@ async def execute_arena_run(config: ArenaConfig):
     # Provider-specific validation across all contestants
     for c in config.contestants:
         if c.model_provider == "nvidia_nim":
-            is_default_base = "integrate.api.nvidia.com" in (nvidia_nim_base_url or "")
+            base_url = (nvidia_nim_base_url or "").strip()
+            parsed = urlparse(base_url)
+            hostname = parsed.hostname
+            if hostname is None and base_url:
+                # Handle scheme-less values like "integrate.api.nvidia.com/v1"
+                hostname = urlparse(f"//{base_url}").hostname
+            is_default_base = (hostname or "").lower() == "integrate.api.nvidia.com"
             if is_default_base and not nvidia_nim_key:
                 raise HTTPException(
                     status_code=400,
