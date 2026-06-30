@@ -18,6 +18,14 @@ class Database:
         os.makedirs(ARENA_RUNS_DIR, exist_ok=True)
         self.initialize_default_datasets()
 
+    def _safe_json_path(self, base_dir: str, resource_id: str) -> Optional[str]:
+        filename = f"{resource_id}.json"
+        base_abs = os.path.abspath(base_dir)
+        candidate_abs = os.path.abspath(os.path.join(base_abs, filename))
+        if os.path.commonpath([base_abs, candidate_abs]) != base_abs:
+            return None
+        return candidate_abs
+
     def initialize_default_datasets(self):
         """Seed the system with some high-quality datasets if empty/missing."""
         default_files = os.listdir(DATASETS_DIR)
@@ -142,7 +150,9 @@ class Database:
         return dataset
 
     def delete_dataset(self, dataset_id: str) -> bool:
-        filepath = os.path.join(DATASETS_DIR, f"{dataset_id}.json")
+        filepath = self._safe_json_path(DATASETS_DIR, dataset_id)
+        if not filepath:
+            return False
         if os.path.exists(filepath):
             os.remove(filepath)
             return True
@@ -164,7 +174,9 @@ class Database:
         return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
-        filepath = os.path.join(RUNS_DIR, f"{run_id}.json")
+        filepath = self._safe_json_path(RUNS_DIR, run_id)
+        if not filepath:
+            return None
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r") as f:
@@ -178,14 +190,18 @@ class Database:
             run["id"] = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
         if "created_at" not in run:
             run["created_at"] = datetime.utcnow().isoformat()
-            
-        filepath = os.path.join(RUNS_DIR, f"{run['id']}.json")
+
+        filepath = self._safe_json_path(RUNS_DIR, run["id"])
+        if not filepath:
+            raise ValueError("Invalid run id")
         with open(filepath, "w") as f:
             json.dump(run, f, indent=2)
         return run
 
     def delete_run(self, run_id: str) -> bool:
-        filepath = os.path.join(RUNS_DIR, f"{run_id}.json")
+        filepath = self._safe_json_path(RUNS_DIR, run_id)
+        if not filepath:
+            return False
         if os.path.exists(filepath):
             os.remove(filepath)
             return True
@@ -208,7 +224,9 @@ class Database:
         return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
 
     def get_arena_run(self, run_id: str) -> Optional[Dict[str, Any]]:
-        filepath = os.path.join(ARENA_RUNS_DIR, f"{run_id}.json")
+        filepath = self._safe_json_path(ARENA_RUNS_DIR, run_id)
+        if not filepath:
+            return None
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r") as f:
@@ -223,13 +241,17 @@ class Database:
         if "created_at" not in run:
             run["created_at"] = datetime.utcnow().isoformat()
 
-        filepath = os.path.join(ARENA_RUNS_DIR, f"{run['id']}.json")
+        filepath = self._safe_json_path(ARENA_RUNS_DIR, run["id"])
+        if not filepath:
+            raise ValueError("Invalid arena run id")
         with open(filepath, "w") as f:
             json.dump(run, f, indent=2)
         return run
 
     def delete_arena_run(self, run_id: str) -> bool:
-        filepath = os.path.join(ARENA_RUNS_DIR, f"{run_id}.json")
+        filepath = self._safe_json_path(ARENA_RUNS_DIR, run_id)
+        if not filepath:
+            return False
         if os.path.exists(filepath):
             os.remove(filepath)
             return True
