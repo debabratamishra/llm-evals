@@ -137,7 +137,9 @@ class Database:
         return sorted(datasets, key=lambda x: x.get("name", ""))
 
     def get_dataset(self, dataset_id: str) -> Optional[Dict[str, Any]]:
-        filepath = os.path.join(DATASETS_DIR, f"{dataset_id}.json")
+        filepath = self._safe_json_path(DATASETS_DIR, dataset_id)
+        if not filepath:
+            return None
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r") as f:
@@ -151,8 +153,14 @@ class Database:
             dataset["id"] = str(uuid.uuid4())
         if "created_at" not in dataset:
             dataset["created_at"] = datetime.utcnow().isoformat()
-        
-        filepath = os.path.join(DATASETS_DIR, f"{dataset['id']}.json")
+
+        # Sanitise the id before using it in a path
+        if not self._SAFE_ID_PATTERN.fullmatch(dataset["id"]):
+            raise ValueError(f"Invalid dataset id: {dataset['id']!r}")
+
+        filepath = self._safe_json_path(DATASETS_DIR, dataset["id"])
+        if not filepath:
+            raise ValueError(f"Invalid dataset id: {dataset['id']!r}")
         with open(filepath, "w") as f:
             json.dump(dataset, f, indent=2)
         return dataset
@@ -199,9 +207,12 @@ class Database:
         if "created_at" not in run:
             run["created_at"] = datetime.utcnow().isoformat()
 
+        if not self._SAFE_ID_PATTERN.fullmatch(run["id"]):
+            raise ValueError(f"Invalid run id: {run['id']!r}")
+
         filepath = self._safe_json_path(RUNS_DIR, run["id"])
         if not filepath:
-            raise ValueError("Invalid run id")
+            raise ValueError(f"Invalid run id: {run['id']!r}")
         with open(filepath, "w") as f:
             json.dump(run, f, indent=2)
         return run
