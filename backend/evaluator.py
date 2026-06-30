@@ -1,9 +1,12 @@
 import time
 import json
 import difflib
+import logging
 import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 # LiteLLM as the unified LLM gateway
 try:
@@ -325,7 +328,7 @@ JSON Response:"""
                 if res:
                     return res
             except Exception as e:
-                print(f"OpenRouter Judge failed: {e}")
+                logger.warning("OpenRouter judge failed: %s", e)
 
         # 2. Try Nvidia NIM
         if self.nvidia_nim_api_key:
@@ -340,7 +343,7 @@ JSON Response:"""
                 if res:
                     return res
             except Exception as e:
-                print(f"Nvidia NIM Judge failed: {e}")
+                logger.warning("Nvidia NIM judge failed: %s", e)
 
         # 5. Heuristic fallback
         sim = self._get_similarity_score(model_answer, ideal_answer)

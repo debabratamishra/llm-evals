@@ -230,7 +230,8 @@ async def preview_hf(path: str):
                 ds = load_dataset(path, name=config_name, split=split_name)
                 preview_rows = [ds[i] for i in range(min(3, len(ds)))]
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Could not load Hugging Face dataset: {str(e)}")
+                logger.warning("Failed to load HuggingFace dataset %r for preview: %s", path, e)
+                raise HTTPException(status_code=400, detail="Could not load the requested Hugging Face dataset. Check the dataset path and try again.")
                 
         if not preview_rows:
             raise HTTPException(status_code=400, detail="Hugging Face dataset has no valid records.")
@@ -243,8 +244,11 @@ async def preview_hf(path: str):
             "columns": columns,
             "preview_rows": preview_rows
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to preview HuggingFace dataset '{path}': {str(e)}")
+        logger.warning("Unexpected error previewing HuggingFace dataset %r: %s", path, e)
+        raise HTTPException(status_code=400, detail="Failed to preview the Hugging Face dataset. Check the dataset path and try again.")
 
 @app.post("/api/datasets/import-hf")
 async def import_hf(req: HFImportRequest):
@@ -333,8 +337,11 @@ async def import_hf(req: HFImportRequest):
         }
         saved = db.save_dataset(dataset)
         return saved
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to import dataset: {str(e)}")
+        logger.warning("HuggingFace import failed for path %r: %s", req.path, e)
+        raise HTTPException(status_code=400, detail="Failed to import the Hugging Face dataset. Check your column mapping and try again.")
 
 @app.get("/api/datasets/{dataset_id}")
 async def get_dataset(dataset_id: str):
@@ -463,8 +470,11 @@ async def upload_dataset(
         }
         return db.save_dataset(dataset)
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse dataset file: {str(e)}")
+        logger.warning("Dataset file parse failed for upload %r: %s", file.filename, e)
+        raise HTTPException(status_code=400, detail="Failed to parse the uploaded dataset file. Ensure it is valid JSON or CSV and matches the expected format.")
 
 
 

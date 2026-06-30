@@ -6,7 +6,7 @@ export default function RunsHistory({ runs, onViewRun, onRefresh, setToast }) {
 
   const handleDelete = async (id, name, e) => {
     e.stopPropagation(); // Prevent row click
-    if (!confirm(`Are you sure you want to delete the evaluation run "${name}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete the evaluation run "${name}"?`)) return;
 
     try {
       const res = await fetch(`/api/runs/${id}`, { method: 'DELETE' });

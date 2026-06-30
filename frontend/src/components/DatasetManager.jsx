@@ -289,7 +289,7 @@ export default function DatasetManager({ datasets, onRefresh, setToast }) {
   };
 
   const handleDelete = async (id, name) => {
-    if (!confirm(`Are you sure you want to delete the dataset "${name}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete the dataset "${name}"?`)) return;
 
     try {
       const res = await fetch(`/api/datasets/${id}`, { method: 'DELETE' });

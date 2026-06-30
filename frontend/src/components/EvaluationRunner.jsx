@@ -272,7 +272,7 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
                       />
                       <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>
                         Browse all models at{' '}
-                        <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer"
+                        <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer"
                           style={{ color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                           openrouter.ai/models <ExternalLink size={10} />
                         </a>
@@ -540,7 +540,7 @@ export default function EvaluationRunner({ datasets, apiKeysSet, onRunComplete, 
                 <ExternalLink size={13} /> OpenRouter
               </p>
               Routes to 200+ models through a single API key. Many models have a free tier.{' '}
-              <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)' }}>
+              <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
                 Get a free key →
               </a>
             </div>

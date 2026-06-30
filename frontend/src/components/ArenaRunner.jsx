@@ -364,7 +364,7 @@ export default function ArenaRunner({ datasets, apiKeysSet, onArenaComplete, set
                     <input type="password" className="form-control" placeholder="OPENROUTER_API_KEY"
                       value={openrouterKey} onChange={e => setOpenrouterKey(e.target.value)} />
                     <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                      <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)' }}>Get a free key →</a>
+                      <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>Get a free key →</a>
                     </p>
                   </div>
                 )}

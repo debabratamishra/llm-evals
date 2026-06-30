@@ -1,9 +1,12 @@
 import os
 import json
+import logging
 import uuid
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -161,7 +164,7 @@ class Database:
                     with open(filepath, "r") as f:
                         datasets.append(json.load(f))
                 except Exception as e:
-                    print(f"Error loading dataset {filename}: {e}")
+                    logger.error("Error loading dataset %s: %s", filename, e)
         return sorted(datasets, key=lambda x: x.get("name", ""))
 
     def get_dataset(self, dataset_id: str) -> Optional[Dict[str, Any]]:
@@ -175,7 +178,7 @@ class Database:
                 with open(filepath, "r") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"Error reading dataset {dataset_id}: {e}")
+                logger.error("Error reading dataset %s: %s", dataset_id, e)
         return None
 
     def save_dataset(self, dataset: Dict[str, Any]) -> Dict[str, Any]:
@@ -213,7 +216,7 @@ class Database:
                         summary = {k: v for k, v in data.items() if k != "results"}
                         runs.append(summary)
                 except Exception as e:
-                    print(f"Error loading run {filename}: {e}")
+                    logger.error("Error loading run %s: %s", filename, e)
         return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
@@ -227,7 +230,7 @@ class Database:
                 with open(filepath, "r") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"Error reading run {run_id}: {e}")
+                logger.error("Error reading run %s: %s", run_id, e)
         return None
 
     def save_run(self, run: Dict[str, Any]) -> Dict[str, Any]:
@@ -266,7 +269,7 @@ class Database:
                         summary = {k: v for k, v in data.items() if k != "results"}
                         runs.append(summary)
                 except Exception as e:
-                    print(f"Error loading arena run {filename}: {e}")
+                    logger.error("Error loading arena run %s: %s", filename, e)
         return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
 
     def get_arena_run(self, run_id: str) -> Optional[Dict[str, Any]]:
