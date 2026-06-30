@@ -646,3 +646,467 @@ JSON Response:"""
             },
             "results": results,
         }
+
+
+class ArenaRunner:
+    """
+    Runs the same dataset through multiple models simultaneously and compares
+    them head-to-head. Each case gets a declared winner (or tie) based on LLM
+    judge composite scores, and an optional direct pairwise comparison prompt.
+    """
+
+    def __init__(
+        self,
+        nvidia_nim_api_key: Optional[str] = None,
+        nvidia_nim_base_url: Optional[str] = None,
+        openrouter_api_key: Optional[str] = None,
+    ):
+        # Re-use the single EvaluationRunner for each contestant; keys are shared.
+        self._base = EvaluationRunner(
+            nvidia_nim_api_key=nvidia_nim_api_key,
+            nvidia_nim_base_url=nvidia_nim_base_url,
+            openrouter_api_key=openrouter_api_key,
+        )
+
+    # ------------------------------------------------------------------
+    # Head-to-head judge
+    # ------------------------------------------------------------------
+
+    def _run_pairwise_judge(
+        self,
+        question: str,
+        ideal_answer: str,
+        responses: List[Dict[str, Any]],  # [{"model_label": str, "answer": str}, ...]
+    ) -> Dict[str, Any]:
+        """
+        Asks an LLM to compare all contestant answers for a single question and
+        pick the best one (or declare a tie). Returns {"winner_label": str, "reason": str}.
+        Falls back to highest composite score when no LLM judge is available.
+        """
+        # Build the prompt dynamically for N contestants
+        responses_text = "\n\n".join(
+            f"### Response {i + 1} ({r['model_label']}):\n{r['answer']}"
+            for i, r in enumerate(responses)
+        )
+        labels_str = ", ".join(r["model_label"] for r in responses)
+        model_labels_json = json.dumps([r["model_label"] for r in responses])
+
+        judge_prompt = f"""You are an impartial AI judge running a model arena evaluation.
+
+Below is a user question, a golden reference answer, and {len(responses)} candidate responses from different models.
+Your task is to select the BEST response overall, or declare a tie if two or more responses are equally strong.
+
+Evaluation criteria (in order of importance):
+1. Factual correctness vs the golden reference
+2. Completeness — does it cover all key points?
+3. Clarity and professional formatting
+
+{responses_text}
+
+---
+User Question: {question}
+Golden Reference Answer: {ideal_answer}
+---
+
+Respond ONLY with a valid JSON object following this exact schema:
+{{
+  "winner": "<model_label from this list: {labels_str}, or the string 'tie'>",
+  "reason": "<1-2 sentence explanation citing the decisive difference>"
+}}
+
+JSON Response:"""
+
+        def _parse(text: str) -> Optional[Dict[str, Any]]:
+            try:
+                if "```json" in text:
+                    text = text.split("```json")[1].split("```")[0].strip()
+                elif "```" in text:
+                    text = text.split("```")[1].split("```")[0].strip()
+                parsed = json.loads(text.strip())
+                winner = parsed.get("winner", "tie")
+                valid_labels = [r["model_label"] for r in responses] + ["tie"]
+                if winner not in valid_labels:
+                    winner = "tie"
+                return {"winner": winner, "reason": parsed.get("reason", "")}
+            except Exception:
+                return None
+
+        # 1. Try OpenRouter
+        if self._base.openrouter_api_key:
+            try:
+                result = _parse(
+                    self._base._call_openrouter(
+                        "meta-llama/llama-3.2-3b-instruct",
+                        [{"role": "user", "content": judge_prompt}],
+                        temperature=0.1,
+                    )["text"]
+                )
+                if result:
+                    return result
+            except Exception as e:
+                print(f"ArenaRunner pairwise judge (OpenRouter) failed: {e}")
+
+        # 2. Try Nvidia NIM
+        if self._base.nvidia_nim_api_key:
+            try:
+                result = _parse(
+                    self._base._call_nvidia_nim(
+                        "meta/llama-3.2-3b-instruct",
+                        [{"role": "user", "content": judge_prompt}],
+                        temperature=0.1,
+                    )["text"]
+                )
+                if result:
+                    return result
+            except Exception as e:
+                print(f"ArenaRunner pairwise judge (Nvidia NIM) failed: {e}")
+
+        # 3. Heuristic fallback — highest composite score wins
+        best_score = -1.0
+        best_label = "tie"
+        tie_threshold = 0.1
+        scores: List[tuple] = []
+        for r in responses:
+            score = (r.get("correctness", 0) + r.get("completeness", 0) + r.get("clarity", 0)) / 3.0
+            scores.append((r["model_label"], score))
+
+        scores.sort(key=lambda x: x[1], reverse=True)
+        if len(scores) >= 2 and abs(scores[0][1] - scores[1][1]) < tie_threshold:
+            best_label = "tie"
+            reason = "Heuristic fallback: composite scores too close to call — declared tie."
+        else:
+            best_label = scores[0][0] if scores else "tie"
+            reason = f"Heuristic fallback: {best_label} achieved the highest composite judge score ({scores[0][1]:.2f}/5)."
+
+        return {"winner": best_label, "reason": reason}
+
+    # ------------------------------------------------------------------
+    # Main arena pipeline
+    # ------------------------------------------------------------------
+
+    def run_arena(
+        self,
+        dataset: Dict[str, Any],
+        arena_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Runs every contestant model over all dataset cases and produces a
+        side-by-side comparison with per-case winners and aggregate leaderboard.
+
+        arena_config shape:
+          {
+            "run_name": str,
+            "dataset_id": str,
+            "contestants": [
+              {
+                "model_provider": str,
+                "model_name":     str,
+                "temperature":    float,
+                "system_prompt":  str,
+                "max_tokens":     int | None,
+                "top_p":          float | None,
+                "frequency_penalty":  float | None,
+                "presence_penalty":   float | None,
+                "multi_turn_history_mode": str,
+                "label":          str,   # display name, e.g. "Llama 3.1 8B"
+              },
+              ...
+            ]
+          }
+        """
+        contestants = arena_config.get("contestants", [])
+        if len(contestants) < 2:
+            raise ValueError("Arena requires at least 2 contestants.")
+
+        cases = dataset.get("cases", [])
+        total_cases = len(cases)
+
+        # Per-contestant accumulators
+        contestant_stats: Dict[str, Dict[str, Any]] = {}
+        for c in contestants:
+            label = c.get("label") or c.get("model_name", "unknown")
+            contestant_stats[label] = {
+                "model_provider": c.get("model_provider", "mock"),
+                "model_name": c.get("model_name", "unknown"),
+                "label": label,
+                "wins": 0,
+                "ties": 0,
+                "losses": 0,
+                "total_latency": 0.0,
+                "total_cost": 0.0,
+                "sum_correctness": 0.0,
+                "sum_completeness": 0.0,
+                "sum_clarity": 0.0,
+                "sum_similarity": 0.0,
+                "total_exact": 0,
+            }
+
+        arena_results: List[Dict[str, Any]] = []
+
+        for case in cases:
+            turns = case.get("turns")
+            is_multi_turn = turns is not None and len(turns) > 0
+
+            # ---- gather responses from each contestant for this case ----
+            contestant_case_results: List[Dict[str, Any]] = []
+
+            for c in contestants:
+                label = c.get("label") or c.get("model_name", "unknown")
+                provider = c.get("model_provider", "mock")
+                model = c.get("model_name", "mock-model")
+                temp = c.get("temperature", 0.2)
+                sys_prompt = c.get("system_prompt", "")
+                max_tokens = c.get("max_tokens")
+                top_p = c.get("top_p")
+                freq_pen = c.get("frequency_penalty")
+                pres_pen = c.get("presence_penalty")
+                mt_mode = c.get("multi_turn_history_mode", "model_response")
+
+                if is_multi_turn:
+                    # Run this contestant through all turns
+                    turn_results = []
+                    actual_history = []
+                    case_lat = 0.0
+                    case_cost = 0.0
+                    case_exact = 0
+                    case_sim = 0.0
+                    case_corr = 0.0
+                    case_comp = 0.0
+                    case_clar = 0.0
+
+                    for t_idx, turn in enumerate(turns):
+                        user_msg = turn["user_message"]
+                        ideal_resp = turn["ideal_response"]
+
+                        messages = []
+                        if sys_prompt:
+                            messages.append({"role": "system", "content": sys_prompt})
+                        for prev_t in range(t_idx):
+                            messages.append({"role": "user", "content": turns[prev_t]["user_message"]})
+                            hist_resp = (
+                                actual_history[prev_t]
+                                if mt_mode == "model_response"
+                                else turns[prev_t]["ideal_response"]
+                            )
+                            messages.append({"role": "assistant", "content": hist_resp})
+                        messages.append({"role": "user", "content": user_msg})
+
+                        if provider == "nvidia_nim":
+                            res = self._base._call_nvidia_nim(model, messages, temp, max_tokens, top_p, freq_pen, pres_pen)
+                        elif provider == "openrouter":
+                            res = self._base._call_openrouter(model, messages, temp, max_tokens, top_p, freq_pen, pres_pen)
+                        else:
+                            res = self._base._call_mock(model, user_msg, ideal_resp)
+
+                        answer = res["text"]
+                        actual_history.append(answer)
+
+                        exact = self._base._get_exact_match(answer, ideal_resp)
+                        sim = self._base._get_similarity_score(answer, ideal_resp)
+                        judge = self._base._run_llm_as_judge(user_msg, ideal_resp, answer)
+                        cost = self._base._calculate_costs(provider, model, res["input_tokens"], res["output_tokens"])
+
+                        case_lat += res["latency"]
+                        case_cost += cost
+                        case_exact += exact
+                        case_sim += sim
+                        case_corr += judge["correctness"]
+                        case_comp += judge["completeness"]
+                        case_clar += judge["clarity"]
+
+                        turn_results.append({
+                            "turn_index": t_idx,
+                            "user_message": user_msg,
+                            "ideal_response": ideal_resp,
+                            "model_response": answer,
+                            "metrics": {
+                                "exact_match": exact,
+                                "similarity": sim,
+                                "llm_correctness": judge["correctness"],
+                                "llm_completeness": judge["completeness"],
+                                "llm_clarity": judge["clarity"],
+                                "latency": round(res["latency"], 2),
+                                "cost": cost,
+                                "input_tokens": res["input_tokens"],
+                                "output_tokens": res["output_tokens"],
+                                "reason": judge["reason"],
+                            }
+                        })
+
+                    nt = len(turns)
+                    contestant_case_results.append({
+                        "label": label,
+                        "model_provider": provider,
+                        "model_name": model,
+                        "is_multi_turn": True,
+                        "turns": turn_results,
+                        "model_answer": turn_results[0]["model_response"] if turn_results else "",
+                        "correctness": round(case_corr / nt, 2),
+                        "completeness": round(case_comp / nt, 2),
+                        "clarity": round(case_clar / nt, 2),
+                        "metrics": {
+                            "exact_match": round(case_exact / nt, 2),
+                            "similarity": round(case_sim / nt, 2),
+                            "llm_correctness": round(case_corr / nt, 2),
+                            "llm_completeness": round(case_comp / nt, 2),
+                            "llm_clarity": round(case_clar / nt, 2),
+                            "latency": round(case_lat, 2),
+                            "cost": round(case_cost, 6),
+                        }
+                    })
+
+                    # Accumulate stats
+                    stats = contestant_stats[label]
+                    stats["total_latency"] += case_lat
+                    stats["total_cost"] += case_cost
+                    stats["total_exact"] += case_exact / nt
+                    stats["sum_correctness"] += case_corr / nt
+                    stats["sum_completeness"] += case_comp / nt
+                    stats["sum_clarity"] += case_clar / nt
+                    stats["sum_similarity"] += case_sim / nt
+
+                else:
+                    # Single-turn
+                    question = case["question"]
+                    ideal_answer = case["ideal_answer"]
+
+                    messages = []
+                    if sys_prompt:
+                        messages.append({"role": "system", "content": sys_prompt})
+                    messages.append({"role": "user", "content": question})
+
+                    if provider == "nvidia_nim":
+                        res = self._base._call_nvidia_nim(model, messages, temp, max_tokens, top_p, freq_pen, pres_pen)
+                    elif provider == "openrouter":
+                        res = self._base._call_openrouter(model, messages, temp, max_tokens, top_p, freq_pen, pres_pen)
+                    else:
+                        res = self._base._call_mock(model, question, ideal_answer)
+
+                    answer = res["text"]
+                    exact = self._base._get_exact_match(answer, ideal_answer)
+                    sim = self._base._get_similarity_score(answer, ideal_answer)
+                    judge = self._base._run_llm_as_judge(question, ideal_answer, answer)
+                    cost = self._base._calculate_costs(provider, model, res["input_tokens"], res["output_tokens"])
+
+                    contestant_case_results.append({
+                        "label": label,
+                        "model_provider": provider,
+                        "model_name": model,
+                        "is_multi_turn": False,
+                        "model_answer": answer,
+                        "correctness": judge["correctness"],
+                        "completeness": judge["completeness"],
+                        "clarity": judge["clarity"],
+                        "metrics": {
+                            "exact_match": exact,
+                            "similarity": sim,
+                            "llm_correctness": judge["correctness"],
+                            "llm_completeness": judge["completeness"],
+                            "llm_clarity": judge["clarity"],
+                            "latency": round(res["latency"], 2),
+                            "cost": cost,
+                            "input_tokens": res["input_tokens"],
+                            "output_tokens": res["output_tokens"],
+                            "reason": judge["reason"],
+                        }
+                    })
+
+                    stats = contestant_stats[label]
+                    stats["total_latency"] += res["latency"]
+                    stats["total_cost"] += cost
+                    stats["total_exact"] += exact
+                    stats["sum_correctness"] += judge["correctness"]
+                    stats["sum_completeness"] += judge["completeness"]
+                    stats["sum_clarity"] += judge["clarity"]
+                    stats["sum_similarity"] += sim
+
+            # ---- pairwise judge for this case ----
+            pairwise_inputs = [
+                {
+                    "model_label": r["label"],
+                    "answer": r["model_answer"],
+                    "correctness": r.get("correctness", 0),
+                    "completeness": r.get("completeness", 0),
+                    "clarity": r.get("clarity", 0),
+                }
+                for r in contestant_case_results
+            ]
+            question_text = (
+                turns[0]["user_message"] if is_multi_turn else case.get("question", "")
+            )
+            ideal_text = (
+                turns[0]["ideal_response"] if is_multi_turn else case.get("ideal_answer", "")
+            )
+            pairwise = self._run_pairwise_judge(question_text, ideal_text, pairwise_inputs)
+            case_winner = pairwise["winner"]
+            case_winner_reason = pairwise["reason"]
+
+            # Update win/tie/loss counts
+            for r in contestant_case_results:
+                lbl = r["label"]
+                if case_winner == "tie":
+                    contestant_stats[lbl]["ties"] += 1
+                elif case_winner == lbl:
+                    contestant_stats[lbl]["wins"] += 1
+                else:
+                    contestant_stats[lbl]["losses"] += 1
+
+            arena_results.append({
+                "case_id": case.get("id", ""),
+                "is_multi_turn": is_multi_turn,
+                "question": question_text,
+                "ideal_answer": ideal_text,
+                "contestant_results": contestant_case_results,
+                "winner": case_winner,
+                "winner_reason": case_winner_reason,
+            })
+
+        # ---- build aggregate per-contestant metrics ----
+        n = total_cases or 1
+        leaderboard: List[Dict[str, Any]] = []
+        for label, stats in contestant_stats.items():
+            win_rate = round(stats["wins"] / total_cases, 3) if total_cases else 0.0
+            leaderboard.append({
+                "label": label,
+                "model_provider": stats["model_provider"],
+                "model_name": stats["model_name"],
+                "wins": stats["wins"],
+                "ties": stats["ties"],
+                "losses": stats["losses"],
+                "win_rate": win_rate,
+                "avg_correctness": round(stats["sum_correctness"] / n, 2),
+                "avg_completeness": round(stats["sum_completeness"] / n, 2),
+                "avg_clarity": round(stats["sum_clarity"] / n, 2),
+                "avg_similarity": round(stats["sum_similarity"] / n, 3),
+                "avg_latency": round(stats["total_latency"] / n, 2),
+                "total_cost": round(stats["total_cost"], 6),
+            })
+        leaderboard.sort(key=lambda x: (x["wins"], x["avg_correctness"]), reverse=True)
+
+        return {
+            "type": "arena",
+            "name": arena_config.get("run_name", f"Arena Run {datetime.now().strftime('%Y-%m-%d %H:%M')}"),
+            "dataset_id": dataset["id"],
+            "dataset_name": dataset["name"],
+            "created_at": datetime.now().astimezone().isoformat(),
+            "total_cases": total_cases,
+            "contestants": [
+                {
+                    "label": c.get("label") or c.get("model_name"),
+                    "model_provider": c.get("model_provider"),
+                    "model_name": c.get("model_name"),
+                    "parameters": {
+                        "temperature": c.get("temperature", 0.2),
+                        "system_prompt": c.get("system_prompt", ""),
+                        "max_tokens": c.get("max_tokens"),
+                        "top_p": c.get("top_p"),
+                        "frequency_penalty": c.get("frequency_penalty"),
+                        "presence_penalty": c.get("presence_penalty"),
+                        "multi_turn_history_mode": c.get("multi_turn_history_mode", "model_response"),
+                    }
+                }
+                for c in contestants
+            ],
+            "leaderboard": leaderboard,
+            "results": arena_results,
+        }

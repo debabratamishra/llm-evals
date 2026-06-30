@@ -724,3 +724,178 @@ hr {
   border-top: 1px solid var(--border-color);
   margin: 24px 0;
 }
+
+/* =========================================================
+   Arena-specific styles
+   ========================================================= */
+
+/* Sidebar section label */
+.nav-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  padding: 16px 16px 4px;
+  pointer-events: none;
+}
+
+/* Arena contestant card accent strip */
+.arena-contestant-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.arena-contestant-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: var(--contestant-color, var(--color-primary));
+}
+
+/* Winner crown badge */
+.arena-winner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Win-rate progress bar track */
+.win-rate-bar-track {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+  max-width: 80px;
+}
+
+.win-rate-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+/* Contestant response panel */
+.contestant-response-panel {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  transition: border-color var(--transition-fast);
+}
+
+.contestant-response-panel.is-winner {
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.contestant-response-header {
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.contestant-response-body {
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.contestant-response-footer {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+/* Arena case list dot indicator */
+.arena-case-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Judge reasoning callout */
+.arena-judge-callout {
+  padding: 12px 16px;
+  background: rgba(0, 242, 254, 0.03);
+  border: 1px solid rgba(0, 242, 254, 0.15);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.arena-judge-callout strong {
+  color: var(--color-primary);
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Arena history card hover glow */
+.arena-history-card {
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.arena-history-card:hover {
+  border-color: rgba(0, 242, 254, 0.2);
+  box-shadow: 0 4px 24px rgba(0, 242, 254, 0.06);
+  transform: translateY(-2px);
+}
+
+/* Contestant pill in history list */
+.contestant-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border-radius: 20px;
+  font-size: 12px;
+  border: 1px solid transparent;
+  transition: border-color var(--transition-fast);
+}
+
+/* Responsive: stack response panels on narrow screens */
+@media (max-width: 900px) {
+  .arena-response-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Add contestant dashed button */
+.btn-dashed {
+  border-style: dashed !important;
+  width: 100%;
+  justify-content: center;
+  padding: 14px !important;
+}
+
+/* Tie badge */
+.badge-tie {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: var(--color-warning);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}

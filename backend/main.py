@@ -1,35 +1,96 @@
 import os
 import csv
 import io
+import logging
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Dict, Any, Optional, Literal
 import json
 from urllib.parse import urlparse
 
 from database import Database
-from evaluator import EvaluationRunner
+from evaluator import EvaluationRunner, ArenaRunner
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Security constants
+# ---------------------------------------------------------------------------
+# Allowlist of model providers recognised by the system
+_ALLOWED_PROVIDERS = frozenset({"mock", "nvidia_nim", "openrouter"})
+
+# Allowlist of hostnames that are permitted as a custom nvidia_nim_base_url.
+# Only HTTPS connections to these hosts are accepted to prevent SSRF.
+_ALLOWED_NIM_HOSTNAMES = frozenset({
+    "integrate.api.nvidia.com",
+})
+
+# Maximum dataset upload size (10 MB)
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+# Maximum rows fetchable from HuggingFace in a single import
+_MAX_HF_LIMIT = 500
+
+
+def _validate_nim_base_url(url: Optional[str]) -> Optional[str]:
+    """Validate a user-supplied Nvidia NIM base URL against an allowlist.
+
+    Raises ValueError if the URL points to a host not in *_ALLOWED_NIM_HOSTNAMES*
+    or uses a non-HTTPS scheme, preventing SSRF to internal services.
+    Returns None when the value is empty/None (caller uses the default).
+    """
+    if not url:
+        return None
+    stripped = url.strip()
+    if not stripped:
+        return None
+    # Ensure the URL has a scheme so urlparse works correctly.
+    if "://" not in stripped:
+        stripped = f"https://{stripped}"
+    parsed = urlparse(stripped)
+    scheme = (parsed.scheme or "").lower()
+    hostname = (parsed.hostname or "").lower()
+    if scheme != "https":
+        raise ValueError(
+            "nvidia_nim_base_url must use HTTPS."
+        )
+    if hostname not in _ALLOWED_NIM_HOSTNAMES:
+        raise ValueError(
+            f"nvidia_nim_base_url hostname '{hostname}' is not permitted. "
+            f"Allowed hosts: {sorted(_ALLOWED_NIM_HOSTNAMES)}"
+        )
+    return url
 
 app = FastAPI(title="LLM Evaluation Starter Framework API")
 
 # Configure CORS
+# Security: Wildcard origins (*) must NOT be combined with allow_credentials=True
+# (the CORS spec forbids this and browsers will reject such responses).
+# Credentials are disabled when all origins are allowed; if you need cookies/auth
+# headers restrict allow_origins to the exact frontend origin(s) instead.
+_CORS_ORIGINS: List[str] = [
+    o.strip()
+    for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 db = Database()
 
 # Pydantic schemas
 class ModelConfig(BaseModel):
-    run_name: str = Field(..., example="Llama 3.2 on Reasoning Benchmark")
-    dataset_id: str = Field(..., example="logical_reasoning_benchmark")
-    model_provider: str = Field(..., example="openrouter")  # mock | nvidia_nim | openrouter
-    model_name: str = Field(..., example="meta-llama/llama-3.1-8b-instruct:free")
+    run_name: str = Field(..., json_schema_extra={"example": "Llama 3.2 on Reasoning Benchmark"})
+    dataset_id: str = Field(..., json_schema_extra={"example": "logical_reasoning_benchmark"})
+    model_provider: str = Field(..., json_schema_extra={"example": "openrouter"})  # mock | nvidia_nim | openrouter
+    model_name: str = Field(..., json_schema_extra={"example": "meta-llama/llama-3.1-8b-instruct:free"})
     temperature: float = Field(0.2, ge=0.0, le=2.0)
     system_prompt: Optional[str] = ""
     # Exposing more parameters
@@ -38,11 +99,25 @@ class ModelConfig(BaseModel):
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     # Multi-turn history evaluation mode (model_response or ideal_response)
-    multi_turn_history_mode: str = Field("model_response", example="model_response")
+    multi_turn_history_mode: str = Field("model_response", json_schema_extra={"example": "model_response"})
     # Per-provider credentials (fall back to env vars when omitted)
     nvidia_nim_api_key: Optional[str] = None
     nvidia_nim_base_url: Optional[str] = None
     openrouter_api_key: Optional[str] = None
+
+    @field_validator("model_provider")
+    @classmethod
+    def validate_model_provider(cls, v: str) -> str:
+        if v not in _ALLOWED_PROVIDERS:
+            raise ValueError(
+                f"model_provider must be one of {sorted(_ALLOWED_PROVIDERS)}, got '{v}'"
+            )
+        return v
+
+    @field_validator("nvidia_nim_base_url")
+    @classmethod
+    def validate_nim_url(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_nim_base_url(v)
 
 class ManualTurn(BaseModel):
     user_message: str
@@ -59,6 +134,36 @@ class DatasetCreate(BaseModel):
     description: Optional[str] = ""
     cases: List[ManualCase]
 
+class ContestantConfig(BaseModel):
+    label: Optional[str] = None           # display name; falls back to model_name
+    model_provider: str = Field(..., json_schema_extra={"example": "openrouter"})
+    model_name: str = Field(..., json_schema_extra={"example": "meta-llama/llama-3.1-8b-instruct:free"})
+    temperature: float = Field(0.2, ge=0.0, le=2.0)
+    system_prompt: Optional[str] = ""
+    max_tokens: Optional[int] = Field(None, ge=1)
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
+    frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+    presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
+    multi_turn_history_mode: str = Field("model_response")
+
+    @field_validator("model_provider")
+    @classmethod
+    def validate_model_provider(cls, v: str) -> str:
+        if v not in _ALLOWED_PROVIDERS:
+            raise ValueError(
+                f"model_provider must be one of {sorted(_ALLOWED_PROVIDERS)}, got '{v}'"
+            )
+        return v
+
+class ArenaConfig(BaseModel):
+    run_name: str = Field(..., json_schema_extra={"example": "Llama 3.1 8B vs Mistral 7B Arena"})
+    dataset_id: str = Field(..., json_schema_extra={"example": "logical_reasoning_benchmark"})
+    contestants: List[ContestantConfig] = Field(..., min_length=2)
+    # Shared credentials (fall back to env vars when omitted)
+    nvidia_nim_api_key: Optional[str] = None
+    nvidia_nim_base_url: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+
 class HFImportRequest(BaseModel):
     path: str
     config: Optional[str] = None
@@ -66,7 +171,7 @@ class HFImportRequest(BaseModel):
     question_column: str
     answer_column: str
     choices_column: Optional[str] = None
-    limit: int = 50
+    limit: int = Field(50, ge=1, le=_MAX_HF_LIMIT)
     dataset_name: str
     dataset_description: Optional[str] = ""
 
@@ -272,8 +377,14 @@ async def upload_dataset(
     description: str = Form(""),
     file: UploadFile = File(...)
 ):
-    contents = await file.read()
-    filename = file.filename.lower()
+    # Security: enforce upload size cap to prevent DoS via huge files.
+    contents = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum allowed size is {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    filename = file.filename.lower() if file.filename else ""
     cases = []
 
     try:
@@ -391,7 +502,7 @@ async def execute_run(config: ModelConfig):
     # Provider-specific validation
     if config.model_provider == "nvidia_nim":
         parsed_base_url = urlparse(nvidia_nim_base_url)
-        is_default_base = parsed_base_url.hostname == "integrate.api.nvidia.com"
+        is_default_base = (parsed_base_url.hostname or "").lower() == "integrate.api.nvidia.com"
         if is_default_base and not nvidia_nim_key:
             raise HTTPException(status_code=400, detail="Nvidia NIM API key is required when using the default cloud host. Set NVIDIA_NIM_API_KEY or provide it in the request.")
     if config.model_provider == "openrouter" and not openrouter_key:
@@ -408,7 +519,10 @@ async def execute_run(config: ModelConfig):
         saved_run = db.save_run(run_data)
         return saved_run
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
+        # Security: log the full exception server-side but only return a generic
+        # message to the client to avoid leaking API keys or internal paths.
+        logger.exception("Evaluation failed")
+        raise HTTPException(status_code=500, detail="Evaluation failed. Check server logs for details.")
 
 @app.delete("/api/runs/{run_id}")
 async def delete_run(run_id: str):
@@ -416,6 +530,95 @@ async def delete_run(run_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Run not found")
     return {"status": "success", "message": "Evaluation run deleted successfully"}
+
+
+# ---------------------------------------------------------------------------
+# Arena endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/arena-runs")
+async def list_arena_runs():
+    """Returns summary list of all saved arena runs (no per-case results)."""
+    return db.get_arena_runs()
+
+
+@app.get("/api/arena-runs/{run_id}")
+async def get_arena_run(run_id: str):
+    run = db.get_arena_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Arena run not found")
+    return run
+
+
+@app.post("/api/arena-runs")
+async def execute_arena_run(config: ArenaConfig):
+    dataset = db.get_dataset(config.dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    # Resolve shared credentials
+    nvidia_nim_key      = config.nvidia_nim_api_key  or os.environ.get("NVIDIA_NIM_API_KEY") or os.environ.get("NVIDIA_API_KEY")
+    nvidia_nim_base_url = config.nvidia_nim_base_url or os.environ.get("NVIDIA_NIM_API_BASE") or os.environ.get("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1")
+    openrouter_key      = config.openrouter_api_key  or os.environ.get("OPENROUTER_API_KEY")
+
+    # Provider-specific validation across all contestants
+    for c in config.contestants:
+        if c.model_provider == "nvidia_nim":
+            base_url = (nvidia_nim_base_url or "").strip()
+            parsed = urlparse(base_url)
+            hostname = parsed.hostname
+            if hostname is None and base_url:
+                # Handle scheme-less values like "integrate.api.nvidia.com/v1"
+                hostname = urlparse(f"//{base_url}").hostname
+            is_default_base = (hostname or "").lower() == "integrate.api.nvidia.com"
+            if is_default_base and not nvidia_nim_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Nvidia NIM API key is required for contestant '{c.label or c.model_name}'. Set NVIDIA_NIM_API_KEY or provide it in the request."
+                )
+        if c.model_provider == "openrouter" and not openrouter_key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"OpenRouter API key is required for contestant '{c.label or c.model_name}'. Set OPENROUTER_API_KEY or provide it in the request."
+            )
+
+    runner = ArenaRunner(
+        nvidia_nim_api_key=nvidia_nim_key,
+        nvidia_nim_base_url=nvidia_nim_base_url,
+        openrouter_api_key=openrouter_key,
+    )
+
+    # Merge label defaults and build config dict
+    contestants_dicts = []
+    for c in config.contestants:
+        d = c.dict()
+        if not d.get("label"):
+            d["label"] = d["model_name"]
+        contestants_dicts.append(d)
+
+    arena_cfg = {
+        "run_name": config.run_name,
+        "dataset_id": config.dataset_id,
+        "contestants": contestants_dicts,
+    }
+
+    try:
+        run_data = runner.run_arena(dataset, arena_cfg)
+        saved = db.save_arena_run(run_data)
+        return saved
+    except Exception as e:
+        # Security: log the full exception server-side but only return a generic
+        # message to the client to avoid leaking API keys or internal paths.
+        logger.exception("Arena evaluation failed")
+        raise HTTPException(status_code=500, detail="Arena evaluation failed. Check server logs for details.")
+
+
+@app.delete("/api/arena-runs/{run_id}")
+async def delete_arena_run(run_id: str):
+    success = db.delete_arena_run(run_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Arena run not found")
+    return {"status": "success", "message": "Arena run deleted successfully"}
 
 if __name__ == "__main__":
     import uvicorn

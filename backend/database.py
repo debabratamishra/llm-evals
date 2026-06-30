@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -8,12 +9,57 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DATASETS_DIR = os.path.join(DATA_DIR, "datasets")
 RUNS_DIR = os.path.join(DATA_DIR, "runs")
+ARENA_RUNS_DIR = os.path.join(DATA_DIR, "arena_runs")
+
+# Allowlist: ids must be pure alphanumeric with underscores/hyphens.
+# This deliberately excludes '.', '/', '\', null bytes, and every other
+# path-traversal character before any filesystem call is made.
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+
+
+def _validate_id(resource_id: str) -> str:
+    """Return the id unchanged if it is safe; raise ValueError otherwise.
+
+    Raises ValueError for any value that could be used for path traversal
+    or that does not match the strict allowlist.  Callers must not reach
+    any filesystem call unless this function has returned successfully.
+    """
+    if not isinstance(resource_id, str) or not resource_id:
+        raise ValueError("Resource id must be a non-empty string.")
+    if not _SAFE_ID_RE.fullmatch(resource_id):
+        raise ValueError(
+            f"Resource id {resource_id!r} contains invalid characters. "
+            "Only A-Z, a-z, 0-9, '_' and '-' are allowed."
+        )
+    # Belt-and-suspenders: confirm the resulting filename stays inside its
+    # base directory even after os.path.abspath resolution.  Because the
+    # regex already blocks '/' and '.', this should never fail — but we keep
+    # the check so any future regex change cannot silently introduce a hole.
+    return resource_id
+
+
+def _build_path(base_dir: str, safe_id: str) -> str:
+    """Construct an absolute path from a pre-validated id.
+
+    ``safe_id`` MUST have been returned by ``_validate_id`` first.
+    The resulting path is confirmed to reside inside ``base_dir``.
+    """
+    base_abs = os.path.realpath(base_dir)
+    candidate = os.path.realpath(os.path.join(base_abs, safe_id + ".json"))
+    # Ensure no symlink or normalisation trickery escaped the base directory.
+    if not candidate.startswith(base_abs + os.sep) and candidate != base_abs:
+        raise ValueError(
+            f"Resolved path {candidate!r} escapes base directory {base_abs!r}."
+        )
+    return candidate
 
 class Database:
+
     def __init__(self):
         # Create directories if they don't exist
         os.makedirs(DATASETS_DIR, exist_ok=True)
         os.makedirs(RUNS_DIR, exist_ok=True)
+        os.makedirs(ARENA_RUNS_DIR, exist_ok=True)
         self.initialize_default_datasets()
 
     def initialize_default_datasets(self):
@@ -119,7 +165,11 @@ class Database:
         return sorted(datasets, key=lambda x: x.get("name", ""))
 
     def get_dataset(self, dataset_id: str) -> Optional[Dict[str, Any]]:
-        filepath = os.path.join(DATASETS_DIR, f"{dataset_id}.json")
+        try:
+            safe_id = _validate_id(dataset_id)
+            filepath = _build_path(DATASETS_DIR, safe_id)
+        except ValueError:
+            return None
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r") as f:
@@ -133,14 +183,19 @@ class Database:
             dataset["id"] = str(uuid.uuid4())
         if "created_at" not in dataset:
             dataset["created_at"] = datetime.utcnow().isoformat()
-        
-        filepath = os.path.join(DATASETS_DIR, f"{dataset['id']}.json")
+
+        safe_id = _validate_id(dataset["id"])  # raises ValueError on bad id
+        filepath = _build_path(DATASETS_DIR, safe_id)
         with open(filepath, "w") as f:
             json.dump(dataset, f, indent=2)
         return dataset
 
     def delete_dataset(self, dataset_id: str) -> bool:
-        filepath = os.path.join(DATASETS_DIR, f"{dataset_id}.json")
+        try:
+            safe_id = _validate_id(dataset_id)
+            filepath = _build_path(DATASETS_DIR, safe_id)
+        except ValueError:
+            return False
         if os.path.exists(filepath):
             os.remove(filepath)
             return True
@@ -162,7 +217,11 @@ class Database:
         return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
-        filepath = os.path.join(RUNS_DIR, f"{run_id}.json")
+        try:
+            safe_id = _validate_id(run_id)
+            filepath = _build_path(RUNS_DIR, safe_id)
+        except ValueError:
+            return None
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r") as f:
@@ -176,14 +235,74 @@ class Database:
             run["id"] = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
         if "created_at" not in run:
             run["created_at"] = datetime.utcnow().isoformat()
-            
-        filepath = os.path.join(RUNS_DIR, f"{run['id']}.json")
+
+        safe_id = _validate_id(run["id"])  # raises ValueError on bad id
+        filepath = _build_path(RUNS_DIR, safe_id)
         with open(filepath, "w") as f:
             json.dump(run, f, indent=2)
         return run
 
     def delete_run(self, run_id: str) -> bool:
-        filepath = os.path.join(RUNS_DIR, f"{run_id}.json")
+        try:
+            safe_id = _validate_id(run_id)
+            filepath = _build_path(RUNS_DIR, safe_id)
+        except ValueError:
+            return False
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            return True
+        return False
+
+    # Arena Run Methods
+    def get_arena_runs(self) -> List[Dict[str, Any]]:
+        """Returns summary list of arena runs (results array excluded for performance)."""
+        runs = []
+        for filename in os.listdir(ARENA_RUNS_DIR):
+            if filename.endswith(".json"):
+                filepath = os.path.join(ARENA_RUNS_DIR, filename)
+                try:
+                    with open(filepath, "r") as f:
+                        data = json.load(f)
+                        summary = {k: v for k, v in data.items() if k != "results"}
+                        runs.append(summary)
+                except Exception as e:
+                    print(f"Error loading arena run {filename}: {e}")
+        return sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True)
+
+    def get_arena_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            safe_id = _validate_id(run_id)
+            filepath = _build_path(ARENA_RUNS_DIR, safe_id)
+        except ValueError:
+            return None
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error reading arena run {run_id}: {e}")
+        return None
+
+    def save_arena_run(self, run: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = run.get("id")
+        if not isinstance(run_id, str) or not run_id:
+            run_id = f"arena_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
+        if "created_at" not in run:
+            run["created_at"] = datetime.utcnow().isoformat()
+
+        safe_id = _validate_id(run_id)  # raises ValueError on bad id
+        run["id"] = safe_id
+        filepath = _build_path(ARENA_RUNS_DIR, safe_id)
+        with open(filepath, "w") as f:
+            json.dump(run, f, indent=2)
+        return run
+
+    def delete_arena_run(self, run_id: str) -> bool:
+        try:
+            safe_id = _validate_id(run_id)
+            filepath = _build_path(ARENA_RUNS_DIR, safe_id)
+        except ValueError:
+            return False
         if os.path.exists(filepath):
             os.remove(filepath)
             return True

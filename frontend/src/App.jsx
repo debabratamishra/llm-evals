@@ -1,17 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Database, PlayCircle, History, Sparkles, AlertCircle, CheckCircle, RefreshCcw } from 'lucide-react';
+import { LayoutDashboard, Database, PlayCircle, History, Swords, AlertCircle, CheckCircle, RefreshCcw } from 'lucide-react';
 import DashboardOverview from './components/DashboardOverview';
 import DatasetManager from './components/DatasetManager';
 import EvaluationRunner from './components/EvaluationRunner';
 import RunsHistory from './components/RunsHistory';
 import RunDetails from './components/RunDetails';
+import ArenaRunner from './components/ArenaRunner';
+import ArenaHistory from './components/ArenaHistory';
+import ArenaDetails from './components/ArenaDetails';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('overview'); // overview, datasets, runner, history, details
+  const [activeTab, setActiveTab] = useState('overview'); // overview, datasets, runner, history, details, arena, arena-history, arena-details
   const [selectedRunId, setSelectedRunId] = useState(null);
+  const [selectedArenaRunId, setSelectedArenaRunId] = useState(null);
   
   const [datasets, setDatasets] = useState([]);
   const [runs, setRuns] = useState([]);
+  const [arenaRuns, setArenaRuns] = useState([]);
   const [apiKeysSet, setApiKeysSet] = useState({
     nvidia_nim_api_key_set: false,
     nvidia_nim_base_url_set: false,
@@ -25,15 +30,17 @@ export default function App() {
   // Fetch initial data
   const fetchData = async () => {
     try {
-      const [datasetsRes, runsRes, keysRes] = await Promise.all([
+      const [datasetsRes, runsRes, keysRes, arenaRunsRes] = await Promise.all([
         fetch('/api/datasets'),
         fetch('/api/runs'),
-        fetch('/api/check-keys')
+        fetch('/api/check-keys'),
+        fetch('/api/arena-runs'),
       ]);
 
       if (datasetsRes.ok) setDatasets(await datasetsRes.json());
       if (runsRes.ok) setRuns(await runsRes.json());
       if (keysRes.ok) setApiKeysSet(await keysRes.json());
+      if (arenaRunsRes.ok) setArenaRuns(await arenaRunsRes.json());
     } catch (err) {
       console.error("Error fetching initial dashboard data: ", err);
       showToast('error', 'Could not establish connection to the FastAPI backend.');
@@ -65,15 +72,26 @@ export default function App() {
   };
 
   const handleRunComplete = async (newRunId) => {
-    await fetchData(); // Refresh data
+    await fetchData();
     setSelectedRunId(newRunId);
     setActiveTab('details');
+  };
+
+  const handleViewArenaRun = (runId) => {
+    setSelectedArenaRunId(runId);
+    setActiveTab('arena-details');
+  };
+
+  const handleArenaComplete = async (newRunId) => {
+    await fetchData();
+    setSelectedArenaRunId(newRunId);
+    setActiveTab('arena-details');
   };
 
   const renderActiveTab = () => {
     switch (activeTab) {
       case 'overview':
-        return <DashboardOverview runs={runs} onViewRun={handleViewRun} />;
+        return <DashboardOverview runs={runs} arenaRuns={arenaRuns} onViewRun={handleViewRun} onViewArenaRun={handleViewArenaRun} />;
       case 'datasets':
         return <DatasetManager datasets={datasets} onRefresh={fetchData} setToast={showToast} />;
       case 'runner':
@@ -102,8 +120,34 @@ export default function App() {
             setToast={showToast} 
           />
         );
+      case 'arena':
+        return (
+          <ArenaRunner
+            datasets={datasets}
+            apiKeysSet={apiKeysSet}
+            onArenaComplete={handleArenaComplete}
+            setToast={showToast}
+          />
+        );
+      case 'arena-history':
+        return (
+          <ArenaHistory
+            arenaRuns={arenaRuns}
+            onViewRun={handleViewArenaRun}
+            onRefresh={fetchData}
+            setToast={showToast}
+          />
+        );
+      case 'arena-details':
+        return (
+          <ArenaDetails
+            runId={selectedArenaRunId}
+            onBack={() => { setActiveTab('arena-history'); setSelectedArenaRunId(null); }}
+            setToast={showToast}
+          />
+        );
       default:
-        return <DashboardOverview runs={runs} onViewRun={handleViewRun} />;
+        return <DashboardOverview runs={runs} arenaRuns={arenaRuns} onViewRun={handleViewRun} onViewArenaRun={handleViewArenaRun} />;
     }
   };
 
@@ -156,6 +200,21 @@ export default function App() {
             onClick={() => setActiveTab('history')}
           >
             <History className="nav-icon" /> Eval History
+          </li>
+
+          <li className="nav-section-label">Arena</li>
+
+          <li
+            className={`nav-item ${activeTab === 'arena' ? 'active' : ''}`}
+            onClick={() => setActiveTab('arena')}
+          >
+            <Swords className="nav-icon" /> Arena Eval
+          </li>
+          <li
+            className={`nav-item ${activeTab === 'arena-history' || activeTab === 'arena-details' ? 'active' : ''}`}
+            onClick={() => setActiveTab('arena-history')}
+          >
+            <History className="nav-icon" /> Arena History
           </li>
         </ul>
 
