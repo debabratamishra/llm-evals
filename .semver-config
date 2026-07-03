@@ -1,0 +1,115 @@
+# Semantic Versioning Configuration for llm-evals
+
+## Commit Convention
+
+Every commit message MUST follow the conventional commit format:
+
+```
+<type>(<scope>): <description>
+```
+
+Supported types:
+| Type     | Usage                                     |
+|----------|-------------------------------------------|
+| feat     | New user-facing feature                   |
+| fix      | Bug fix                                   |
+| docs     | Documentation changes                     |
+| test     | Adding or fixing tests                    |
+| refact   | Code refactoring (no behavior change)     |
+| refactor | Alias for refact                          |
+| perf     | Performance improvement                   |
+| chore    | Tooling, dependencies, version bumps      |
+| ci       | CI/CD configuration                       |
+| build    | Build system changes                      |
+| deps     | Dependency updates                        |
+| style    | Formatting only                           |
+| revert   | Reverting a previous commit               |
+
+A `BREAKING:` prefix at the start marks the commit as a major version bump.
+
+## Semver Bump Rules (applied by release.py)
+
+| Commit type  | Bump    | Notes                                    |
+|--------------|---------|------------------------------------------|
+| feat         | minor   | New user-visible functionality           |
+| fix          | patch   | Bug fixes                                |
+| fix+BREAKING | major   | Fix that breaks backward compat          |
+| test         | patch   | Test-only changes                        |
+| refact       | patch   | Refactoring (no behavior change)         |
+| docs         | patch   | Documentation                            |
+| chore        | patch   | Tooling, housekeeping                    |
+| BREAKING:    | major   | Always — breaks existing contracts       |
+
+Rule: **highest wins**. A mix of feat + fix → minor. A single BREAKING → major.
+
+## Release Workflow
+
+### Manual release (recommended — use release.py)
+
+```bash
+# Auto-detect bump type from conventional commits since last tag:
+uv run python release.py
+
+# Force a specific bump:
+uv run python release.py patch
+uv run python release.py minor
+uv run python release.py major
+
+# Preview without making changes:
+uv run python release.py --dry-run
+```
+
+This script:
+1. Scans commits since last tag for conventional commit types
+2. Derives the correct semver bump
+3. Updates `version` in `pyproject.toml`
+4. Generates a new CHANGELOG.md section from git history
+5. Pre-pends to CHANGELOG.md (newest at top)
+6. Commits the version bump
+7. Creates an annotated git tag (`v1.2.3`)
+8. Prints the push command you need to run
+
+### CI/CD auto-release (GitHub Actions)
+
+Pushing to `main` automatically triggers `.github/workflows/release.yml`, which:
+1. Detects the next patch version
+2. Bumps pyproject.toml
+3. Re-generates CHANGELOG.md
+4. Commits and tags
+
+The CI skips auto-release on "chore: bump version" commits to avoid loops.
+
+### First release
+
+```bash
+# After merging your first batch of commits to main:
+uv run python release.py minor    # or patch, depending on changes
+git push origin main --tags
+```
+
+## Commit message validation
+
+A git commit-msg hook is provided at `scripts/commit-msg-hook`.
+Install it once:
+```bash
+bash scripts/install-hooks.sh
+```
+
+This validates every commit message against the conventional format before
+allowing the commit. CI also validates via the `.commitlintrc.json` rules.
+
+## Quick reference
+
+```bash
+# Write code, commit with conventional messages:
+git commit -m "feat: add arena comparison view"
+git commit -m "fix: handle empty dataset gracefully"
+git commit -m "BREAKING: feat: redesign eval API contract"
+
+# When ready to release:
+uv run python release.py           # auto-detect + tag
+git push origin main --tags        # push release to GitHub
+
+# View changelog for current unreleased changes:
+uv run python changelog_generator.py
+```

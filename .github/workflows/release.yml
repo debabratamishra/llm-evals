@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  auto-release:
+    # Skip if this push is itself a version-bump commit (avoid infinite loop)
+    if: "!contains(github.event.head_commit.message, 'chore: bump version')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Derive next version
+        id: version
+        run: echo "version=$(python scripts/ci-bump-version.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Update pyproject.toml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+
+      - name: Generate changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          python changelog_generator.py --full > /tmp/new_section.md
+          # Prepend new section to existing CHANGELOG.md
+          printf '# Changelog\n\nAll notable changes to this project are documented here.\n\n' > /tmp/changelog.md
+          cat /tmp/new_section.md >> /tmp/changelog.md
+          if [ -f CHANGELOG.md ]; then
+            # Skip the first 3 lines (header) of existing
+            tail -n+4 CHANGELOG.md >> /tmp/changelog.md
+          fi
+          mv /tmp/changelog.md CHANGELOG.md
+
+      - name: Commit and tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml CHANGELOG.md
+          git commit -m "chore: bump version to v${VERSION}"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin main --tags
