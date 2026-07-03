@@ -20,6 +20,9 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
 
+      - name: Fetch tags from remote
+        run: git fetch --tags --force
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -53,6 +56,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml CHANGELOG.md
+
+          # Only commit if there are changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit \u2014 skipping"
+            exit 0
+          fi
+
           git commit -m "chore: bump version to v${VERSION}"
+
+          # Delete existing local tag in case it was fetched from a prior failed run
+          git tag -d "v${VERSION}" 2>/dev/null || true
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
-          git push https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/debabratamishra/llm-evals.git main --tags
+          git push "https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/debabratamishra/llm-evals.git" main --tags
