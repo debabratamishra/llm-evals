@@ -221,6 +221,43 @@ Key endpoints:
 
 ---
 
+## 🏷️ Release Cycle
+
+Every merge to `main` creates a new release. The project uses **semantic
+versioning** (MAJOR.MINOR.PATCH) with **conventional commits**.
+
+### How releases work
+
+```bash
+# 1. Commit using conventional format:
+git commit -m "feat: add arena comparison view"
+git commit -m "fix: handle empty dataset gracefully"
+
+# 2. When ready, cut a release (auto-detects bump type):
+uv run python release.py          # auto: patch/minor/major from commits
+uv run python release.py --dry-run  # preview without changes
+
+# 3. Push the release:
+git push origin main --tags
+```
+
+This bumps `pyproject.toml`, generates the `CHANGELOG.md` section from git
+history, commits, and tags (`v1.2.3`). GitHub Actions also auto-tags pushes
+to `main` — the CI workflow at `.github/workflows/release.yml` detects patch
+bumps from commit history.
+
+### Commit convention
+
+| Prefix   | Meaning       | Bump   |
+|----------|---------------|--------|
+| `feat:`  | New feature   | minor  |
+| `fix:`   | Bug fix       | patch  |
+| `BREAKING:` | Breaking change | major |
+
+See `.semver-config` and `.commitlintrc.json` for the full reference.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! This project is open source under the

@@ -1,0 +1,41 @@
+#!/bin/bash
+#
+# Pre-commit hook: validate conventional commit message format.
+# Install into .git/hooks/commit-msg to run on every commit.
+#
+# Valid formats:
+#   feat: add new feature
+#   feat(arena): add arena comparison
+#   fix: resolve security issue
+#   fix(api): handle null response
+#   docs: update README
+#   refact: simplify evaluator pipeline
+#   test: add unit tests for evaluator
+#   chore: bump version to v1.2.0
+#   BREAKING: feat: change API contract
+#
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Regex for conventional commit (with optional scope and BREAKING prefix)
+PATTERN="^(BREAKING: )?(feat|fix|docs|test|refact|refactor|perf|chore|style|ci|build|deps|revert)(\([^)]+\))?: .{1,}$"
+
+if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+    echo "ERROR: Commit message does not follow conventional commit format."
+    echo ""
+    echo "Valid formats:"
+    echo "  feat: add new feature"
+    echo "  feat(arena): add comparison page"
+    echo "  fix: resolve crash on empty dataset"
+    echo "  docs: update README"
+    echo "  refact: simplify evaluator pipeline"
+    echo "  test: add unit tests"
+    echo "  chore: bump version to v1.1.0"
+    echo "  BREAKING: feat: change API contract"
+    echo ""
+    echo "Got: $COMMIT_MSG"
+    exit 1
+fi
+
+exit 0
