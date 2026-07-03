@@ -8,7 +8,6 @@ If no tag exists, returns 0.1.0.
 from __future__ import annotations
 
 import subprocess
-import sys
 
 
 def main():
