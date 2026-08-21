@@ -15,8 +15,6 @@ import {
   Server, 
   ExternalLink,
   Info,
-  Clock,
-  Coins,
   RefreshCw,
   Sparkles,
   ChevronRight,
