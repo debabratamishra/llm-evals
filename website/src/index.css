@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+:root {
+  /* Light Theme (Default) */
+  --bg-app: #f8fafc;
+  --bg-sidebar: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-input: #e2e8f0;
+  --border-color: rgba(0, 0, 0, 0.06);
+  --border-glow: rgba(2, 132, 199, 0.1);
+  
+  --primary-color: #0284c7; /* Sky 600 */
+  --secondary-color: #0369a1; /* Sky 700 */
+  --accent-color: #6d28d9; /* Violet 700 */
+  
+  --text-primary: #0f172a; /* Slate 900 */
+  --text-secondary: #475569; /* Slate 600 */
+  --text-muted: #64748b; /* Slate 500 */
+  
+  --accent-gradient: linear-gradient(135deg, #0284c7 0%, #6d28d9 100%);
+  --success-gradient: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  
+  --shadow-md: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+}
+
+:root.dark {
+  /* Dark Theme */
+  --bg-app: #080a10;
+  --bg-sidebar: #0f1322;
+  --bg-card: #15192c;
+  --bg-input: #1e243f;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-glow: rgba(0, 242, 254, 0.15);
+  
+  --primary-color: #00f2fe;
+  --secondary-color: #4facfe;
+  --accent-color: #bf55ec;
+  
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  
+  --accent-gradient: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  --success-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-title: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --color-bg-app: var(--bg-app);
+  --color-bg-sidebar: var(--bg-sidebar);
+  --color-bg-card: var(--bg-card);
+  --color-bg-input: var(--bg-input);
+  --color-border-color: var(--border-color);
+  
+  --color-primary: var(--primary-color);
+  --color-secondary: var(--secondary-color);
+  --color-accent: var(--accent-color);
+  
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-input);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-color);
+}

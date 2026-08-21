@@ -210,3 +210,9 @@ __marimo__/
 data/
 .DS_Store
 .vscode/
+
+# Node / JavaScript
+node_modules/
+.vite/
+dist/
+build/

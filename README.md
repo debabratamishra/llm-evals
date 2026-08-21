@@ -7,7 +7,6 @@
 [![Node](https://img.shields.io/badge/node-18%2B-5fa04e?style=flat-square&logo=node.js&logoColor=fff)](frontend/package.json)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.138%2B-009688?style=flat-square&logo=fastapi)](backend/main.py)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react)](frontend/src/App.jsx)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com/debabratamishra/llm-evals/pulls)
 
 **Benchmark, evaluate, and compare LLMs — from your browser.**
 
